@@ -1,0 +1,72 @@
+{{define "content"}}
+<div class="h-full flex flex-col">
+    <!-- Header -->
+    <header class="flex justify-between items-center p-4">
+        <button class="text-2xl" style="background: none; border: none; color: inherit;">🔍</button>
+        <button class="text-2xl" style="background: none; border: none; color: inherit;">▽</button>
+    </header>
+
+    <!-- Summary -->
+    <div class="flex flex-col items-center mb-8 shrink-0">
+        <div class="text-gray text-sm font-medium mb-1">Spent this month</div>
+        <div class="text-5xl font-semibold">€{{printf "%.2f" .Total}}</div>
+    </div>
+
+    <!-- List -->
+    <div class="flex-1 overflow-y-auto px-4 pb-24">
+        {{range .Groups}}
+        <section class="mb-6">
+            <div class="flex justify-between items-center mb-2">
+                <small class="text-gray text-xs font-bold" style="text-transform: uppercase; letter-spacing: 0.05em;">{{.Title}}</small>
+                <small class="text-gray text-xs font-bold">-€{{printf "%.2f" .Total}}</small>
+            </div>
+
+            <div>
+                {{range .Items}}
+                <div class="list-item" style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--pico-muted-border-color);">
+                    <div class="flex items-center">
+                        <!-- Icon -->
+                        <div class="cat-icon {{.CategoryStyle.Bg}}">
+                            {{.CategoryStyle.Icon}}
+                        </div>
+                        
+                        <!-- Info -->
+                        <div style="margin-left: 1rem;">
+                            <div class="font-semibold text-base">{{.Description}}</div>
+                            <small class="text-gray text-xs">{{.Time}}</small>
+                        </div>
+                    </div>
+
+                    <!-- Amount -->
+                    <div class="expense-amount {{if .IsIncome}}expense-income{{end}}">
+                        {{if .IsIncome}}+{{else}}-{{end}}€{{printf "%.2f" .Amount}}
+                    </div>
+                </div>
+                {{end}}
+            </div>
+        </section>
+        {{end}}
+    </div>
+
+    <!-- FAB for List View -->
+    <div class="fab-container">
+        <div class="fab-wrapper">
+             <button class="btn-fab text-gray" style="background: transparent; color: var(--pico-muted-color);">
+                <span>📊</span>
+            </button>
+            <button 
+                hx-get="/expenses/create" 
+                hx-target="#content" 
+                hx-push-url="true"
+                class="btn-fab contrast"
+                style="background-color: var(--pico-primary-inverse); color: var(--pico-primary-background);"
+            >
+                +
+            </button>
+             <button class="btn-fab text-gray" style="background: transparent; color: var(--pico-muted-color);">
+                <span>⚙️</span>
+            </button>
+        </div>
+    </div>
+</div>
+{{end}}

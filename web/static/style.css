@@ -1,0 +1,158 @@
+:root {
+  --cat-food: #60a5fa;
+  --cat-transport: #c084fc;
+  --cat-entertainment: #e879f9;
+  --cat-utilities: #facc15;
+  --cat-housing: #818cf8;
+  --cat-gifts: #f87171;
+  --cat-other: #9ca3af;
+}
+
+body, html {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+#content {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--pico-background-color);
+}
+
+/* Category Styles */
+.cat-food { background-color: var(--cat-food); color: white; }
+.cat-transport { background-color: var(--cat-transport); color: white; }
+.cat-entertainment { background-color: var(--cat-entertainment); color: white; }
+.cat-utilities { background-color: var(--cat-utilities); color: white; }
+.cat-housing { background-color: var(--cat-housing); color: white; }
+.cat-gifts { background-color: var(--cat-gifts); color: white; }
+.cat-other { background-color: var(--cat-other); color: white; }
+
+.cat-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+/* Utility Helpers */
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.justify-center { justify-content: center; }
+.w-full { width: 100%; }
+.h-full { height: 100%; }
+.text-center { text-align: center; }
+.gap-2 { gap: 0.5rem; }
+.gap-4 { gap: 1rem; }
+.mb-1 { margin-bottom: 0.25rem; }
+.mb-2 { margin-bottom: 0.5rem; }
+.mb-4 { margin-bottom: 1rem; }
+.mb-6 { margin-bottom: 1.5rem; }
+.mb-8 { margin-bottom: 2rem; }
+.p-2 { padding: 0.5rem; }
+.p-4 { padding: 1rem; }
+.px-4 { padding-left: 1rem; padding-right: 1rem; }
+.pb-24 { padding-bottom: 6rem; }
+.text-xs { font-size: 0.75rem; }
+.text-sm { font-size: 0.875rem; }
+.text-base { font-size: 1rem; }
+.text-2xl { font-size: 1.5rem; }
+.text-5xl { font-size: 3rem; }
+.font-bold { font-weight: bold; }
+.font-medium { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.text-gray { color: var(--pico-muted-color); }
+.text-gray-400 { color: #9ca3af; } /* fallback or use pico muted */
+.text-gray-500 { color: #6b7280; }
+
+.overflow-y-auto { overflow-y: auto; }
+.relative { position: relative; }
+.absolute { position: absolute; }
+.inset-0 { top: 0; right: 0; bottom: 0; left: 0; }
+
+/* Custom Components */
+.expense-amount {
+    font-weight: 600;
+    font-size: 1.125rem;
+}
+.expense-income { color: var(--pico-ins-color); }
+
+.fab-container {
+    position: absolute;
+    bottom: 1.5rem;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.fab-wrapper {
+    background-color: var(--pico-card-background-color);
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 9999px;
+    padding: 0.75rem 1.5rem;
+    display: flex;
+    gap: 2rem;
+    align-items: center;
+    pointer-events: auto;
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+}
+
+.btn-fab {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 0.75rem;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    border: none;
+    margin-bottom: 0;
+}
+
+.amount-display {
+    font-size: 3.75rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.amount-input {
+    background: transparent;
+    border: none;
+    font-size: inherit;
+    width: 100%;
+    text-align: center;
+    color: inherit;
+    outline: none;
+    box-shadow: none;
+}
+.amount-input:focus {
+    box-shadow: none;
+    border: none;
+}
+
+/* Reset buttons */
+button.text-2xl {
+    background: none;
+    border: none;
+    padding: 0.5rem;
+    box-shadow: none;
+}
+
+/* Pico Overrides */
+:root {
+    --pico-font-size: 100%;
+}

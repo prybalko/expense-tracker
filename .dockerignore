@@ -1,0 +1,11 @@
+.git
+.gitignore
+.dockerignore
+Dockerfile
+README.md
+CHANGES.md
+docker-compose.yml
+node_modules
+web/node_modules
+*.db
+*.sqlite

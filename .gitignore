@@ -1,0 +1,28 @@
+# Binaries
+main
+dist/
+bin/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Node
+node_modules/
+npm-debug.log
+
+# Go
+vendor/
+go.work
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+.cursor/
+*.swp
+
