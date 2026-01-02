@@ -29,6 +29,9 @@ jobs:
     - name: Verify dependencies
       run: go mod verify
 
+    - name: Install Playwright
+      run: go run github.com/playwright-community/playwright-go/cmd/playwright install --with-deps
+
     - name: Run Linter
       uses: golangci/golangci-lint-action@v9
       with:
