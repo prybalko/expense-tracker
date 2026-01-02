@@ -59,6 +59,29 @@ func (db *DB) CreateExpense(amount float64, description, category string, date t
 	return err
 }
 
+// GetExpense retrieves a single expense by ID.
+func (db *DB) GetExpense(id int64) (*models.Expense, error) {
+	row := db.conn.QueryRow(
+		"SELECT id, amount, description, category, created_at FROM expenses WHERE id = ?",
+		id,
+	)
+
+	var e models.Expense
+	if err := row.Scan(&e.ID, &e.Amount, &e.Description, &e.Category, &e.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+// UpdateExpense updates an existing expense in the database.
+func (db *DB) UpdateExpense(e *models.Expense) error {
+	_, err := db.conn.Exec(
+		"UPDATE expenses SET amount = ?, description = ?, category = ?, created_at = ? WHERE id = ?",
+		e.Amount, e.Description, e.Category, e.CreatedAt, e.ID,
+	)
+	return err
+}
+
 // ListExpenses retrieves all expenses from the database, ordered by date descending.
 func (db *DB) ListExpenses() ([]models.Expense, error) {
 	rows, err := db.conn.Query(
@@ -85,4 +108,3 @@ func (db *DB) ListExpenses() ([]models.Expense, error) {
 func (db *DB) Close() error {
 	return db.conn.Close()
 }
-

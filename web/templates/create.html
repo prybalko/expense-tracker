@@ -1,147 +1,110 @@
 {{define "content"}}
-<div class="fixed inset-0 w-full h-full flex flex-col z-50 font-sans" style="background: var(--pico-background-color);">
-    <!-- Header -->
-    <header class="flex justify-between items-center p-4">
-        <button 
-            hx-get="/expenses" 
-            hx-target="#content"
-            hx-push-url="true"
-            class="text-2xl text-gray"
-            style="background: none; border: none; padding: 0.5rem;"
-        >×</button>
+<div class="screen create-screen">
+    <header class="header">
+        <button class="close-btn" hx-get="/expenses" hx-target="#content" hx-push-url="true">×</button>
     </header>
 
-    <form 
-        hx-post="/expenses" 
-        hx-target="#content"
-        class="flex flex-col h-full"
-    >
-        <!-- Amount Display -->
-        <div class="flex-1 flex justify-center items-center relative">
-            <div class="amount-display">
-                <span class="tracking-tighter">€</span>
-                <input 
-                    type="number" 
-                    name="amount" 
-                    step="0.01" 
-                    placeholder="0.00" 
-                    required
-                    class="amount-input"
-                    autofocus
-                >
+    <form class="create-form" 
+          {{if .IsEdit}}hx-post="/expenses/{{.Expense.ID}}"{{else}}hx-post="/expenses"{{end}} 
+          hx-target="#content" 
+          id="expense-form">
+        <section class="amount-display">
+            <div class="amount-hero">
+                <span class="currency">€</span><span id="display-amount">{{if .IsEdit}}{{printf "%.2f" .Expense.Amount}}{{else}}0{{end}}</span>
             </div>
-        </div>
+            <input type="hidden" name="amount" id="amount-input" value="{{if .IsEdit}}{{printf "%.2f" .Expense.Amount}}{{else}}0{{end}}">
+            <input type="text" name="description" placeholder="Add Note" class="note-input" autocomplete="off" value="{{if .IsEdit}}{{.Expense.Description}}{{end}}">
+        </section>
 
-        <!-- Add Note -->
-        <div class="flex justify-center mb-8">
-            <input 
-                type="text" 
-                name="description" 
-                placeholder="Add Note"
-                style="text-align: center; border-radius: 9999px; max-width: 200px;"
-            >
-        </div>
-
-        <!-- Bottom Section -->
-        <div class="pb-6 px-4">
-            <!-- Actions Row -->
-            <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
-                <div class="relative">
-                    <input 
-                        type="datetime-local" 
-                        name="date"
-                        id="date-input"
-                        class="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer"
-                        onchange="window.updateDateDisplay(this)"
-                    >
-                    <div role="button" class="secondary outline w-full flex items-center justify-center gap-2" style="margin-bottom: 0;">
-                        <span>📅</span> <span id="date-display">Today</span>
-                    </div>
+        <section class="selectors">
+            <label class="selector">
+                <input type="datetime-local" name="date" id="date-input" value="{{if .IsEdit}}{{.FormattedDate}}{{end}}" onchange="updateDateDisplay(this)">
+                <div class="selector-btn">
+                    <span>📅</span><span id="date-display">Today</span>
                 </div>
-                
-                <div class="relative">
-                     <select 
-                        name="category" 
-                        class="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer"
-                        onchange="updateCategoryDisplay(this)"
-                    >
-                        <option value="food" selected>Food</option>
-                        <option value="transport">Transport</option>
-                        <option value="entertainment">Entertainment</option>
-                        <option value="utilities">Utilities</option>
-                        <option value="housing">Housing</option>
-                        <option value="gifts">Gifts</option>
-                        <option value="other">Other</option>
-                    </select>
-                    <div role="button" class="secondary outline w-full flex items-center justify-center gap-2" style="margin-bottom: 0;">
-                        <span>🍽️</span> <span id="category-display">Food</span>
-                    </div>
+            </label>
+            <label class="selector">
+                <select name="category" id="category-select" onchange="updateCategoryDisplay(this)">
+                    <option value="food"{{if and .IsEdit (eq .Expense.Category "food")}} selected{{end}}>Food</option>
+                    <option value="transport"{{if and .IsEdit (eq .Expense.Category "transport")}} selected{{end}}>Transport</option>
+                    <option value="entertainment"{{if and .IsEdit (eq .Expense.Category "entertainment")}} selected{{end}}>Entertainment</option>
+                    <option value="utilities"{{if and .IsEdit (eq .Expense.Category "utilities")}} selected{{end}}>Utilities</option>
+                    <option value="housing"{{if and .IsEdit (eq .Expense.Category "housing")}} selected{{end}}>Housing</option>
+                    <option value="gifts"{{if and .IsEdit (eq .Expense.Category "gifts")}} selected{{end}}>Gifts</option>
+                    <option value="other"{{if and .IsEdit (eq .Expense.Category "other")}} selected{{end}}>Other</option>
+                </select>
+                <div class="selector-btn">
+                    <span id="cat-icon">🍽️</span><span id="category-display">Food</span>
                 </div>
-            </div>
+            </label>
+        </section>
 
-            <!-- Submit Button -->
-             <button 
-                type="submit"
-                class="w-full contrast"
-                style="height: 4rem; font-size: 1.25rem; border-radius: 0.75rem;"
-            >
-                Save Expense
-            </button>
-        </div>
+        <section class="keypad">
+            <button type="button" onclick="appendNum('1')">1</button>
+            <button type="button" onclick="appendNum('2')">2</button>
+            <button type="button" onclick="appendNum('3')">3</button>
+            <button type="button" onclick="appendNum('4')">4</button>
+            <button type="button" onclick="appendNum('5')">5</button>
+            <button type="button" onclick="appendNum('6')">6</button>
+            <button type="button" onclick="appendNum('7')">7</button>
+            <button type="button" onclick="appendNum('8')">8</button>
+            <button type="button" onclick="appendNum('9')">9</button>
+            <button type="button" onclick="appendNum('.')">.</button>
+            <button type="button" onclick="appendNum('0')">0</button>
+            <button type="button" class="backspace" onclick="backspace()">⌫</button>
+            <button type="submit" class="submit">✓</button>
+        </section>
     </form>
 
     <script>
-        (function() {
-            function updateDateDisplay(input) {
-                const date = new Date(input.value || new Date());
-                const now = new Date();
-                const isToday = date.toDateString() === now.toDateString();
-                
-                const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const dateStr = isToday ? 'Today' : date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-                
-                document.getElementById('date-display').textContent = `${dateStr}, ${timeStr}`;
-            }
-            
-            // Initialize date input with local ISO string
+    (function() {
+        const icons = {food:'🍽️',transport:'🚌',entertainment:'🎮',utilities:'💡',housing:'🏠',gifts:'🎁',other:'📦'};
+        let amt = document.getElementById('amount-input').value || '0';
+        if (amt.includes('.')) amt = parseFloat(amt).toString();
+
+        function updateDate(input) {
+            const d = new Date(input.value || new Date());
+            const isToday = d.toDateString() === new Date().toDateString();
+            document.getElementById('date-display').textContent = isToday ? 'Today' : d.toLocaleDateString(undefined, {day:'numeric',month:'short'});
+        }
+
+        function updateCategory(sel) {
+            document.getElementById('category-display').textContent = sel.value.charAt(0).toUpperCase() + sel.value.slice(1);
+            document.getElementById('cat-icon').textContent = icons[sel.value] || '📦';
+        }
+
+        function update() {
+            document.getElementById('display-amount').textContent = amt;
+            document.getElementById('amount-input').value = amt;
+        }
+
+        window.updateDateDisplay = updateDate;
+        window.updateCategoryDisplay = updateCategory;
+
+        window.appendNum = function(n) {
+            if (amt === '0' && n !== '.') amt = n;
+            else if (n === '.' && amt.includes('.')) return;
+            else if (amt.replace('.','').length >= 9) return;
+            else amt += n;
+            update();
+        };
+
+        window.backspace = function() {
+            amt = amt.length === 1 ? '0' : amt.slice(0, -1);
+            update();
+        };
+
+        // Init
+        const dateInput = document.getElementById('date-input');
+        if (!dateInput.value) {
             const now = new Date();
             now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-            const dateInput = document.getElementById('date-input');
-            
-            if (dateInput) {
-                dateInput.value = now.toISOString().slice(0, 16);
-                updateDateDisplay(dateInput);
-                
-                // Expose click handler for the container to trigger the input picker
-                window.triggerDatePicker = function() {
-                    if (dateInput.showPicker) {
-                        dateInput.showPicker();
-                    } else {
-                        dateInput.click();
-                    }
-                }
-            }
-
-            const categoryIcons = {
-                'food': '🍽️',
-                'transport': '🚌',
-                'entertainment': '🎮',
-                'utilities': '💡',
-                'housing': '🏠',
-                'gifts': '🎁',
-                'other': '📦'
-            };
-
-            window.updateCategoryDisplay = function(select) {
-                const category = select.value;
-                const icon = categoryIcons[category] || '📦';
-                const display = document.getElementById('category-display');
-                display.textContent = category.charAt(0).toUpperCase() + category.slice(1);
-                display.previousElementSibling.textContent = icon;
-            };
-
-            window.updateDateDisplay = updateDateDisplay;
-        })();
+            dateInput.value = now.toISOString().slice(0, 16);
+        }
+        updateDate(dateInput);
+        updateCategory(document.getElementById('category-select'));
+        document.getElementById('display-amount').textContent = amt;
+    })();
     </script>
 </div>
 {{end}}
