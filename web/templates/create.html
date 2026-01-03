@@ -9,8 +9,11 @@
           hx-target="#content" 
           id="expense-form">
         <section class="amount-display">
-            <div class="amount-hero">
-                <span class="currency">€</span><span id="display-amount">{{if .IsEdit}}{{printf "%.2f" .Expense.Amount}}{{else}}0{{end}}</span>
+            <div class="amount-row">
+                <div class="amount-hero">
+                    <span class="currency">€</span><span id="display-amount">{{if .IsEdit}}{{printf "%.2f" .Expense.Amount}}{{else}}0{{end}}</span>
+                </div>
+                <button type="button" class="delete-btn" onclick="backspace()">⌫</button>
             </div>
             <input type="hidden" name="amount" id="amount-input" value="{{if .IsEdit}}{{printf "%.2f" .Expense.Amount}}{{else}}0{{end}}">
             <input type="text" name="description" placeholder="Add Note" class="note-input" autocomplete="off" value="{{if .IsEdit}}{{.Expense.Description}}{{end}}">
@@ -25,13 +28,9 @@
             </label>
             <label class="selector">
                 <select name="category" id="category-select" onchange="updateCategoryDisplay(this)">
-                    <option value="food"{{if and .IsEdit (eq .Expense.Category "food")}} selected{{end}}>Food</option>
-                    <option value="transport"{{if and .IsEdit (eq .Expense.Category "transport")}} selected{{end}}>Transport</option>
-                    <option value="entertainment"{{if and .IsEdit (eq .Expense.Category "entertainment")}} selected{{end}}>Entertainment</option>
-                    <option value="utilities"{{if and .IsEdit (eq .Expense.Category "utilities")}} selected{{end}}>Utilities</option>
-                    <option value="housing"{{if and .IsEdit (eq .Expense.Category "housing")}} selected{{end}}>Housing</option>
-                    <option value="gifts"{{if and .IsEdit (eq .Expense.Category "gifts")}} selected{{end}}>Gifts</option>
-                    <option value="other"{{if and .IsEdit (eq .Expense.Category "other")}} selected{{end}}>Other</option>
+                    {{range .Categories}}
+                    <option value="{{.ID}}"{{if and $.IsEdit (eq $.Expense.Category .ID)}} selected{{end}}>{{.Icon}} {{.Name}}</option>
+                    {{end}}
                 </select>
                 <div class="selector-btn">
                     <span id="cat-icon">🍽️</span><span id="category-display">Food</span>
@@ -51,14 +50,15 @@
             <button type="button" onclick="appendNum('9')">9</button>
             <button type="button" onclick="appendNum('.')">.</button>
             <button type="button" onclick="appendNum('0')">0</button>
-            <button type="button" class="backspace" onclick="backspace()">⌫</button>
             <button type="submit" class="submit">✓</button>
         </section>
     </form>
 
     <script>
     (function() {
-        const icons = {food:'🍽️',transport:'🚌',entertainment:'🎮',utilities:'💡',housing:'🏠',gifts:'🎁',other:'📦'};
+        const icons = {
+            {{range .Categories}}"{{.ID}}":"{{.Icon}}",{{end}}
+        };
         let amt = document.getElementById('amount-input').value || '0';
         if (amt.includes('.')) amt = parseFloat(amt).toString();
 

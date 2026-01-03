@@ -8,15 +8,6 @@
   --accent: #c4704f;
   --radius: 12px;
   --radius-sm: 8px;
-
-  /* Category colors */
-  --cat-food: #60a5fa;
-  --cat-transport: #a78bfa;
-  --cat-entertainment: #f472b6;
-  --cat-utilities: #fbbf24;
-  --cat-housing: #818cf8;
-  --cat-gifts: #fb7185;
-  --cat-other: #94a3b8;
 }
 
 /* ========== Reset ========== */
@@ -139,14 +130,6 @@ body {
   font-size: 1.125rem;
 }
 
-.cat-food { background: var(--cat-food); }
-.cat-transport { background: var(--cat-transport); }
-.cat-entertainment { background: var(--cat-entertainment); }
-.cat-utilities { background: var(--cat-utilities); }
-.cat-housing { background: var(--cat-housing); }
-.cat-gifts { background: var(--cat-gifts); }
-.cat-other { background: var(--cat-other); }
-
 .expense-details strong {
   display: block;
   font-weight: 500;
@@ -166,7 +149,6 @@ body {
 
 /* FAB */
 .fab-bar {
-  background: var(--surface);
   border-top: 1px solid var(--border);
   padding: 1rem;
   display: flex;
@@ -242,6 +224,15 @@ body {
   padding: 1rem;
 }
 
+.amount-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+  padding: 0 3rem;
+}
+
 .amount-hero {
   font-size: clamp(3rem, 15vw, 5rem);
   font-weight: 500;
@@ -251,6 +242,32 @@ body {
   font-size: 0.4em;
   color: var(--muted);
   vertical-align: super;
+}
+
+.delete-btn {
+  position: absolute;
+  right: 1rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--border);
+  border: none;
+  font-size: 1rem;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.delete-btn:hover {
+  background: var(--text);
+  color: var(--surface);
+}
+
+.delete-btn:active {
+  background: var(--accent);
 }
 
 .note-input {
@@ -334,19 +351,10 @@ body {
 
 .keypad button:active { background: var(--border); }
 
-.keypad .backspace {
-  background: transparent;
-  color: var(--muted);
-}
-
 .keypad .submit {
-  grid-column: span 3;
-  aspect-ratio: auto;
-  height: 52px;
   background: var(--text);
   color: var(--surface);
   font-size: 1.5rem;
-  margin-top: 0.25rem;
 }
 
 .keypad .submit:active { background: var(--accent); }

@@ -26,26 +26,38 @@ func NewHandlers(db *storage.DB, templateDir string) *Handlers {
 
 // ... (keep CategoryStyle and getCategoryStyle as they are used in List) ...
 
+// CategoryDef defines the properties of a category.
+type CategoryDef struct {
+	ID    string
+	Name  string
+	Icon  string
+	Color string
+}
+
+var categories = []CategoryDef{
+	{"food", "Food", "🍽️", "#60a5fa"},
+	{"transport", "Transport", "🚌", "#a78bfa"},
+	{"entertainment", "Entertainment", "🎮", "#f472b6"},
+	{"utilities", "Utilities", "💡", "#fbbf24"},
+	{"housing", "Housing", "🏠", "#818cf8"},
+	{"gifts", "Gifts", "🎁", "#fb7185"},
+	{"other", "Other", "📦", "#94a3b8"},
+}
+
 // CategoryStyle defines the visual style for a category.
 type CategoryStyle struct {
-	Icon string
-	Bg   string
+	Icon  string
+	Color string
 }
 
 func getCategoryStyle(category string) CategoryStyle {
-	styles := map[string]CategoryStyle{
-		"food":          {"🍽️", "cat-food"},
-		"transport":     {"🚌", "cat-transport"},
-		"entertainment": {"🎮", "cat-entertainment"},
-		"utilities":     {"💡", "cat-utilities"},
-		"housing":       {"🏠", "cat-housing"},
-		"gifts":         {"🎁", "cat-gifts"},
-		"other":         {"📦", "cat-other"},
+	catLower := strings.ToLower(category)
+	for _, c := range categories {
+		if c.ID == catLower {
+			return CategoryStyle{Icon: c.Icon, Color: c.Color}
+		}
 	}
-	if style, ok := styles[strings.ToLower(category)]; ok {
-		return style
-	}
-	return styles["other"]
+	return CategoryStyle{Icon: "📦", Color: "#94a3b8"}
 }
 
 // ExpenseItem represents an expense in the list view.
@@ -75,6 +87,7 @@ type FormViewModel struct {
 	Expense       *models.Expense
 	IsEdit        bool
 	FormattedDate string
+	Categories    []CategoryDef
 }
 
 // ListExpenses renders the list of expenses.
@@ -116,7 +129,10 @@ func (h *Handlers) ListExpenses(w http.ResponseWriter, r *http.Request) {
 
 // CreateExpenseForm renders the form to create a new expense.
 func (h *Handlers) CreateExpenseForm(w http.ResponseWriter, r *http.Request) {
-	h.render(w, r, "create.html", FormViewModel{IsEdit: false})
+	h.render(w, r, "create.html", FormViewModel{
+		IsEdit:     false,
+		Categories: categories,
+	})
 }
 
 // EditExpenseForm renders the form to edit an existing expense.
@@ -127,6 +143,7 @@ func (h *Handlers) EditExpenseForm(w http.ResponseWriter, r *http.Request) {
 			Expense:       expense,
 			IsEdit:        true,
 			FormattedDate: expense.CreatedAt.Format("2006-01-02T15:04"),
+			Categories:    categories,
 		})
 	} else {
 		http.Error(w, "Expense not found", http.StatusNotFound)
