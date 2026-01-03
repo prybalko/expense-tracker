@@ -90,7 +90,7 @@ body {
 .group-header {
   display: flex;
   justify-content: space-between;
-  padding: 0.75rem 0;
+  padding: 1.5rem 0 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.5rem;
 }
@@ -108,7 +108,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0.4rem 0;
-  font-size: 1.1rem;
+  font-size: 1.2rem;
   cursor: pointer;
   transition: opacity 0.15s;
 }
@@ -149,15 +149,15 @@ body {
 /* FAB */
 .fab-bar {
   border-top: 1px solid var(--border);
-  padding: 1rem;
+  padding: 0.5rem 0 1.5rem;
   display: flex;
   justify-content: space-around;
   align-items: center;
 }
 
 .fab-bar button {
-  width: 44px;
-  height: 44px;
+  width: 60px;
+  height: 40px;
   border: none;
   border-radius: var(--radius-sm);
   background: none;
@@ -175,11 +175,9 @@ body {
 .fab-bar .fab-add {
   background: var(--text);
   color: var(--surface);
-  font-size: 1.5rem;
+  font-size: 2rem;
   font-weight: 300;
 }
-
-.fab-bar .fab-add:hover { background: var(--accent); }
 
 /* ========== Create Screen ========== */
 .create-screen {
