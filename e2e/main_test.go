@@ -12,6 +12,7 @@ import (
 
 var (
 	appURL string
+	dbPath string
 )
 
 func TestMain(m *testing.M) {
@@ -42,7 +43,7 @@ func runTestMain(m *testing.M) int {
 	defer os.Remove(buildPath)
 
 	// 2. Start the server
-	dbPath := filepath.Join(os.TempDir(), "test_expenses.db")
+	dbPath = filepath.Join(os.TempDir(), "test_expenses.db")
 	os.Remove(dbPath) // Ensure clean state
 	defer os.Remove(dbPath)
 
