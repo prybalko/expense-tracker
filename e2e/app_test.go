@@ -243,7 +243,7 @@ func (s *E2ETestSuite) TestEditExpenseFlow() {
 	item := s.page.Locator(".expense-item").First()
 	err = s.expect.Locator(item.Locator(".expense-details strong")).ToHaveText("Original Expense")
 	s.Require().NoError(err, "original description not found")
-	
+
 	err = s.expect.Locator(item.Locator(".expense-amount")).ToContainText("50.00")
 	s.Require().NoError(err, "original amount not found")
 
@@ -254,7 +254,7 @@ func (s *E2ETestSuite) TestEditExpenseFlow() {
 	// Verify edit screen (form reused)
 	err = s.expect.Locator(s.page.Locator("#expense-form")).ToBeVisible()
 	s.Require().NoError(err, "edit form not visible")
-	
+
 	// Verify form is populated
 	err = s.expect.Locator(s.page.Locator("input[name=description]")).ToHaveValue("Original Expense")
 	s.Require().NoError(err, "description not populated")
@@ -262,11 +262,11 @@ func (s *E2ETestSuite) TestEditExpenseFlow() {
 	// 3. Edit the expense
 	// Delete amount using backspace button
 	// We need to clear "50.00" -> 5 chars.
-	for i := 0; i < 6; i++ {
+	for range 5 {
 		err = s.page.Locator(".delete-btn").Click()
 		s.Require().NoError(err, "failed to click delete button")
 	}
-	
+
 	// Ensure it is 0
 	err = s.expect.Locator(s.page.Locator("#display-amount")).ToHaveText("0")
 	s.Require().NoError(err, "amount not cleared")
@@ -296,7 +296,7 @@ func (s *E2ETestSuite) TestEditExpenseFlow() {
 	// Save changes
 	err = s.page.Locator("button.submit").Click()
 	s.Require().NoError(err, "failed to save changes")
-	
+
 	// Ensure form is gone
 	err = s.expect.Locator(s.page.Locator("#expense-form")).Not().ToBeVisible()
 	s.Require().NoError(err, "expense form still visible after submit")
@@ -304,7 +304,7 @@ func (s *E2ETestSuite) TestEditExpenseFlow() {
 	// 4. Verify changes in list
 	// Wait for list to update
 	newItem := s.page.Locator(".expense-item").First()
-	
+
 	err = s.expect.Locator(newItem.Locator(".expense-details strong")).ToHaveText("Updated Expense")
 	s.Require().NoError(err, "updated description not found")
 

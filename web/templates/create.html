@@ -5,7 +5,8 @@
     </header>
 
     <form class="create-form" 
-          {{if .IsEdit}}hx-post="/expenses/{{.Expense.ID}}"{{else}}hx-post="/expenses"{{end}} 
+          method="POST"
+          {{if .IsEdit}}action="/expenses/{{.Expense.ID}}" hx-post="/expenses/{{.Expense.ID}}"{{else}}action="/expenses" hx-post="/expenses"{{end}} 
           hx-target="#content" 
           id="expense-form">
         <section class="amount-display">
@@ -64,13 +65,13 @@
             </div>
             <div class="calendar-grid" id="calendar-grid">
                 <!-- Headers -->
-                <div class="calendar-day-header">Su</div>
                 <div class="calendar-day-header">Mo</div>
                 <div class="calendar-day-header">Tu</div>
                 <div class="calendar-day-header">We</div>
                 <div class="calendar-day-header">Th</div>
                 <div class="calendar-day-header">Fr</div>
                 <div class="calendar-day-header">Sa</div>
+                <div class="calendar-day-header">Su</div>
                 <!-- Days will be injected here -->
             </div>
         </div>
@@ -83,106 +84,6 @@
         };
         let amt = document.getElementById('amount-input').value || '0';
         if (amt.includes('.')) amt = parseFloat(amt).toString();
-
-        // Date Picker Logic
-        let viewDate = new Date();
-        
-        window.openDatePicker = function() {
-            const input = document.getElementById('date-input');
-            const val = input.value;
-            if (val) viewDate = new Date(val);
-            else viewDate = new Date();
-            
-            renderCalendar();
-            document.querySelector('.date-modal-overlay').classList.add('open');
-        };
-
-        window.closeDatePicker = function() {
-            document.querySelector('.date-modal-overlay').classList.remove('open');
-        };
-
-        window.changeMonth = function(delta) {
-            viewDate.setMonth(viewDate.getMonth() + delta);
-            renderCalendar();
-        };
-
-        window.selectDate = function(year, month, day) {
-            const input = document.getElementById('date-input');
-            // Preserve time if editing, else default to current time or 12:00
-            let timePart = '12:00';
-            if (input.value && input.value.includes('T')) {
-                timePart = input.value.split('T')[1];
-            } else {
-                const now = new Date();
-                timePart = now.toTimeString().slice(0, 5);
-            }
-
-            const d = new Date(year, month, day);
-            const dateStr = d.getFullYear() + '-' + 
-                           String(d.getMonth() + 1).padStart(2, '0') + '-' + 
-                           String(d.getDate()).padStart(2, '0');
-            
-            input.value = dateStr + 'T' + timePart;
-            updateDateDisplay(input);
-            closeDatePicker();
-        };
-
-        window.renderCalendar = function() {
-            const year = viewDate.getFullYear();
-            const month = viewDate.getMonth();
-            
-            const monthNames = ["January", "February", "March", "April", "May", "June",
-                "July", "August", "September", "October", "November", "December"
-            ];
-            document.getElementById('calendar-month-year').textContent = monthNames[month] + ' ' + year;
-
-            const firstDay = new Date(year, month, 1);
-            const lastDay = new Date(year, month + 1, 0);
-            const daysInMonth = lastDay.getDate();
-            const startDay = firstDay.getDay(); // 0 = Sunday
-
-            const grid = document.getElementById('calendar-grid');
-            // Clear existing days (keep headers)
-            const headers = grid.querySelectorAll('.calendar-day-header');
-            grid.innerHTML = '';
-            headers.forEach(h => grid.appendChild(h));
-
-            // Empty slots
-            for (let i = 0; i < startDay; i++) {
-                const div = document.createElement('div');
-                div.className = 'calendar-day empty';
-                grid.appendChild(div);
-            }
-
-            // Days
-            const today = new Date();
-            const inputDate = new Date(document.getElementById('date-input').value || new Date());
-
-            for (let d = 1; d <= daysInMonth; d++) {
-                const div = document.createElement('div');
-                div.className = 'calendar-day';
-                div.textContent = d;
-                
-                // Check if today
-                if (year === today.getFullYear() && month === today.getMonth() && d === today.getDate()) {
-                    div.classList.add('today');
-                }
-                
-                // Check if selected
-                if (year === inputDate.getFullYear() && month === inputDate.getMonth() && d === inputDate.getDate()) {
-                    div.classList.add('selected');
-                }
-
-                div.onclick = () => selectDate(year, month, d);
-                grid.appendChild(div);
-            }
-        };
-
-        function updateDateDisplay(input) {
-            const d = new Date(input.value || new Date());
-            const isToday = d.toDateString() === new Date().toDateString();
-            document.getElementById('date-display').textContent = isToday ? 'Today' : d.toLocaleDateString(undefined, {day:'numeric',month:'short'});
-        }
 
         function updateCategory(sel) {
             document.getElementById('category-display').textContent = sel.value.charAt(0).toUpperCase() + sel.value.slice(1);
@@ -214,9 +115,11 @@
         if (!dateInput.value) {
             const now = new Date();
             now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-            dateInput.value = now.toISOString().slice(0, 16);
+            dateInput.value = now.toISOString().slice(0, 19);
         }
-        updateDateDisplay(dateInput);
+        if (window.updateDateDisplay) {
+            updateDateDisplay(dateInput);
+        }
         updateCategory(document.getElementById('category-select'));
         document.getElementById('display-amount').textContent = amt;
     })();

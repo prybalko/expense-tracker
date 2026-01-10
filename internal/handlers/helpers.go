@@ -44,9 +44,13 @@ func parseForm(r *http.Request) (amount float64, desc, category string, date tim
 	if dateStr == "" {
 		return 0, "", "", time.Time{}, errors.New("date is required")
 	}
-	date, err = time.Parse("2006-01-02T15:04", dateStr)
+	date, err = time.Parse("2006-01-02T15:04:05", dateStr)
 	if err != nil {
-		return 0, "", "", time.Time{}, err
+		// Fallback to minutes if seconds are missing
+		date, err = time.Parse("2006-01-02T15:04", dateStr)
+		if err != nil {
+			return 0, "", "", time.Time{}, err
+		}
 	}
 	return amount, desc, category, date, nil
 }

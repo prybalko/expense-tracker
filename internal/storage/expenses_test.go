@@ -39,9 +39,9 @@ func (s *ExpenseTestSuite) TestCreateMultipleExpensesWithSameTimestamp() {
 	err := s.db.CreateExpense(10.00, "First", "test", now)
 	s.Require().NoError(err)
 
-	// Second insert with same timestamp (currently no unique constraint, so this will succeed)
+	// Second insert with same timestamp should fail due to unique constraint
 	err = s.db.CreateExpense(20.00, "Second", "test", now)
-	s.NoError(err)
+	s.Error(err)
 }
 
 func (s *ExpenseTestSuite) TestListExpenses() {

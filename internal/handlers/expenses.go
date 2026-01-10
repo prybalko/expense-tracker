@@ -65,7 +65,7 @@ func (h *Handlers) EditExpenseForm(w http.ResponseWriter, r *http.Request) {
 		h.render(w, r, "create.html", FormViewModel{
 			Expense:       expense,
 			IsEdit:        true,
-			FormattedDate: expense.Date.Format("2006-01-02T15:04"),
+			FormattedDate: expense.Date.Format("2006-01-02T15:04:05"),
 			Categories:    categories,
 		})
 	} else {

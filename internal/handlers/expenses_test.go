@@ -64,7 +64,7 @@ func (s *ExpenseHandlerTestSuite) TestCreateExpense() {
 	form.Add("description", "Lunch Test")
 	form.Add("category", "food")
 	// Use current month's date to ensure it appears in ListExpenses (which filters by current month)
-	form.Add("date", "2026-01-09T12:00")
+	form.Add("date", "2026-01-09T12:00:00")
 
 	req := httptest.NewRequest("POST", "/expenses", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -85,6 +85,30 @@ func (s *ExpenseHandlerTestSuite) TestCreateExpense() {
 	s.Require().Len(expenses, 1, "expected exactly 1 expense")
 	s.Equal("Lunch Test", expenses[0].Description)
 	s.InDelta(15.00, expenses[0].Amount, 0.001)
+}
+
+func (s *ExpenseHandlerTestSuite) TestCreateExpense_LegacyFormat() {
+	h := NewHandlers(s.db, s.templateDir, false)
+
+	form := url.Values{}
+	form.Add("amount", "20.00")
+	form.Add("description", "Fallback Test")
+	form.Add("category", "food")
+	form.Add("date", "2026-01-09T12:30") // No seconds
+
+	req := httptest.NewRequest("POST", "/expenses", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	h.CreateExpense(w, req)
+
+	resp := w.Result()
+	s.Equal(http.StatusOK, resp.StatusCode)
+	
+	expenses, err := s.db.ListExpenses()
+	s.Require().NoError(err)
+	s.Require().Len(expenses, 1)
+	s.Equal("Fallback Test", expenses[0].Description)
 }
 
 func (s *ExpenseHandlerTestSuite) TestCreateExpense_MissingDate() {

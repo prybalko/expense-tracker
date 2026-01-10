@@ -67,6 +67,9 @@ func (db *DB) migrate() error {
 	// Add last_activity column to sessions for rolling sessions
 	_, _ = db.conn.Exec(`ALTER TABLE sessions ADD COLUMN last_activity DATETIME DEFAULT CURRENT_TIMESTAMP`)
 
+	// Add unique constraint on date for expenses
+	_, _ = db.conn.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS expenses_date_uindex ON expenses(date)`)
+
 	return nil
 }
 
