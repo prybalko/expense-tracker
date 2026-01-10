@@ -303,10 +303,10 @@ body {
 
 .selector {
   position: relative;
+  cursor: pointer;
 }
 
-.selector select,
-.selector input[type="datetime-local"] {
+.selector select {
   position: absolute;
   inset: 0;
   opacity: 0;
@@ -360,6 +360,96 @@ body {
 }
 
 .keypad .submit:active { background: var(--accent); }
+
+/* ========== Date Modal ========== */
+.date-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.date-modal-overlay.open {
+  display: flex;
+  opacity: 1;
+}
+
+.date-modal {
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 1rem;
+  width: 90%;
+  max-width: 320px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.calendar-header h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.calendar-header button {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.25rem;
+  text-align: center;
+}
+
+.calendar-day-header {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+  padding-bottom: 0.5rem;
+}
+
+.calendar-day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.calendar-day:hover {
+  background: var(--surface);
+}
+
+.calendar-day.selected {
+  background: var(--text);
+  color: var(--surface);
+}
+
+.calendar-day.today {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.calendar-day.empty {
+  pointer-events: none;
+}
 
 /* ========== Responsive ========== */
 @media (min-width: 640px) {

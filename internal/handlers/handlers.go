@@ -39,7 +39,8 @@ type CategoryDef struct {
 }
 
 var categories = []CategoryDef{
-	{"food", "Food", "🍽️", "#60a5fa"},
+	{"groceries", "Groceries", "🛒", "#60a5fa"},
+	{"eating out", "Eating Out", "🍴", "#60a5fa"},
 	{"transport", "Transport", "🚌", "#a78bfa"},
 	{"entertainment", "Entertainment", "🎮", "#f472b6"},
 	{"utilities", "Utilities", "💡", "#fbbf24"},

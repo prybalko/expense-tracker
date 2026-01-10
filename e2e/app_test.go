@@ -118,7 +118,7 @@ func (s *E2ETestSuite) TestCompleteUserFlow() {
 
 	// Select category
 	_, err = s.page.Locator("select[name=category]").SelectOption(playwright.SelectOptionValues{
-		Values: &[]string{"food"},
+		Values: &[]string{"groceries"},
 	})
 	s.Require().NoError(err, "failed to select category")
 
@@ -185,6 +185,135 @@ func (s *E2ETestSuite) TestAddExpenseToBlankList() {
 	// Verify the total is updated
 	err = s.expect.Locator(s.page.Locator(".total")).ToContainText("25.99")
 	s.Require().NoError(err, "total should be updated to 25.99")
+}
+
+func (s *E2ETestSuite) TestEditExpenseFlow() {
+	// Login
+	s.login()
+
+	// 1. Add an expense to edit later
+	err := s.page.Locator(".fab-add").Click()
+	s.Require().NoError(err, "failed to click add button")
+
+	err = s.expect.Locator(s.page.Locator("#expense-form")).ToBeVisible()
+	s.Require().NoError(err, "expense form not visible")
+
+	// Select "transport" category (non-default)
+	_, err = s.page.Locator("select[name=category]").SelectOption(playwright.SelectOptionValues{
+		Values: &[]string{"transport"},
+	})
+	s.Require().NoError(err, "failed to select category")
+
+	// Set date to 1st of current month using the custom date picker
+	// 1. Open date picker
+	err = s.page.Locator(".selector").First().Click() // The first selector is the date one
+	s.Require().NoError(err, "failed to open date picker")
+
+	// 2. Wait for modal
+	err = s.expect.Locator(s.page.Locator(".date-modal")).ToBeVisible()
+	s.Require().NoError(err, "date picker modal not visible")
+
+	// 3. Select the 1st
+	err = s.page.Locator(".calendar-day").GetByText("1", playwright.LocatorGetByTextOptions{Exact: playwright.Bool(true)}).Click()
+	s.Require().NoError(err, "failed to select date 1")
+
+	// 4. Verify modal closed
+	err = s.expect.Locator(s.page.Locator(".date-modal")).Not().ToBeVisible()
+	s.Require().NoError(err, "date picker modal did not close")
+
+	// Set amount to 50.00
+	keys := []string{"5", "0", ".", "0", "0"}
+	for _, key := range keys {
+		err = s.page.Locator("button:text-is('" + key + "')").Click()
+		s.Require().NoError(err, "failed to click key %s", key)
+	}
+
+	// Fill description
+	err = s.page.Locator("input[name=description]").Fill("Original Expense")
+	s.Require().NoError(err, "failed to fill description")
+
+	// Submit
+	err = s.page.Locator("button.submit").Click()
+	s.Require().NoError(err, "failed to submit expense")
+
+	// Verify it exists in the list
+	err = s.expect.Locator(s.page.Locator(".expense-item")).ToHaveCount(1)
+	s.Require().NoError(err, "expense item not found in list")
+
+	item := s.page.Locator(".expense-item").First()
+	err = s.expect.Locator(item.Locator(".expense-details strong")).ToHaveText("Original Expense")
+	s.Require().NoError(err, "original description not found")
+	
+	err = s.expect.Locator(item.Locator(".expense-amount")).ToContainText("50.00")
+	s.Require().NoError(err, "original amount not found")
+
+	// 2. Click on the item to edit
+	err = item.Click()
+	s.Require().NoError(err, "failed to click expense item")
+
+	// Verify edit screen (form reused)
+	err = s.expect.Locator(s.page.Locator("#expense-form")).ToBeVisible()
+	s.Require().NoError(err, "edit form not visible")
+	
+	// Verify form is populated
+	err = s.expect.Locator(s.page.Locator("input[name=description]")).ToHaveValue("Original Expense")
+	s.Require().NoError(err, "description not populated")
+
+	// 3. Edit the expense
+	// Delete amount using backspace button
+	// We need to clear "50.00" -> 5 chars.
+	for i := 0; i < 6; i++ {
+		err = s.page.Locator(".delete-btn").Click()
+		s.Require().NoError(err, "failed to click delete button")
+	}
+	
+	// Ensure it is 0
+	err = s.expect.Locator(s.page.Locator("#display-amount")).ToHaveText("0")
+	s.Require().NoError(err, "amount not cleared")
+
+	// Set new amount: 40.00
+	newKeys := []string{"4", "0", ".", "0", "0"}
+	for _, key := range newKeys {
+		err = s.page.Locator("button:text-is('" + key + "')").Click()
+		s.Require().NoError(err, "failed to click key %s", key)
+	}
+
+	// Change description
+	err = s.page.Locator("input[name=description]").Fill("Updated Expense")
+	s.Require().NoError(err, "failed to update description")
+
+	// Change date to 2nd using picker
+	err = s.page.Locator(".selector").First().Click()
+	s.Require().NoError(err, "failed to open date picker for edit")
+
+	err = s.expect.Locator(s.page.Locator(".date-modal")).ToBeVisible()
+	s.Require().NoError(err, "date picker modal not visible")
+
+	// Pick 2nd
+	err = s.page.Locator(".calendar-day").GetByText("2", playwright.LocatorGetByTextOptions{Exact: playwright.Bool(true)}).Click()
+	s.Require().NoError(err, "failed to select date 2")
+
+	// Save changes
+	err = s.page.Locator("button.submit").Click()
+	s.Require().NoError(err, "failed to save changes")
+	
+	// Ensure form is gone
+	err = s.expect.Locator(s.page.Locator("#expense-form")).Not().ToBeVisible()
+	s.Require().NoError(err, "expense form still visible after submit")
+
+	// 4. Verify changes in list
+	// Wait for list to update
+	newItem := s.page.Locator(".expense-item").First()
+	
+	err = s.expect.Locator(newItem.Locator(".expense-details strong")).ToHaveText("Updated Expense")
+	s.Require().NoError(err, "updated description not found")
+
+	err = s.expect.Locator(newItem.Locator(".expense-amount")).ToContainText("40.00")
+	s.Require().NoError(err, "updated amount not found")
+
+	// Verify total reflects the change (was 50.00, now 40.00)
+	err = s.expect.Locator(s.page.Locator(".total")).ToContainText("40.00")
+	s.Require().NoError(err, "total not updated")
 }
 
 // TestE2ESuite runs the e2e test suite

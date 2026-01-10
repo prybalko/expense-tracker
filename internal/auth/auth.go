@@ -37,3 +37,12 @@ func GenerateSessionToken() (string, error) {
 	}
 	return base64.URLEncoding.EncodeToString(b), nil
 }
+
+// GenerateRandomPassword creates a cryptographically secure random password.
+func GenerateRandomPassword() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b)[:20], nil
+}

@@ -60,8 +60,18 @@ func bootstrapUser(db *storage.DB) {
 	password := os.Getenv("ADMIN_PASSWORD")
 
 	if username == "" || password == "" {
-		log.Println("No users exist. Set ADMIN_USER and ADMIN_PASSWORD env vars to create one.")
-		return
+		// Generate default admin with random password
+		username = "admin"
+		var err error
+		password, err = auth.GenerateRandomPassword()
+		if err != nil {
+			log.Printf("Failed to generate random password: %v", err)
+			return
+		}
+		log.Println("=======================================================")
+		log.Println("WARNING: Creating default admin user with random password")
+		log.Printf("Password: %s", password)
+		log.Println("=======================================================")
 	}
 
 	hash, err := auth.HashPassword(password)
