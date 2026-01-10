@@ -5,8 +5,6 @@ import (
 
 	"expense-tracker/internal/auth"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -17,121 +15,121 @@ type UserTestSuite struct {
 }
 
 // SetupTest runs before each test
-func (suite *UserTestSuite) SetupTest() {
+func (s *UserTestSuite) SetupTest() {
 	db, err := NewDB(":memory:")
-	require.NoError(suite.T(), err, "failed to create test database")
-	suite.db = db
+	s.Require().NoError(err, "failed to create test database")
+	s.db = db
 }
 
 // TearDownTest runs after each test
-func (suite *UserTestSuite) TearDownTest() {
-	if suite.db != nil {
-		suite.db.Close()
+func (s *UserTestSuite) TearDownTest() {
+	if s.db != nil {
+		s.db.Close()
 	}
 }
 
-func (suite *UserTestSuite) TestCreateUser() {
+func (s *UserTestSuite) TestCreateUser() {
 	passwordHash, err := auth.HashPassword("testpassword")
-	require.NoError(suite.T(), err)
+	s.Require().NoError(err)
 
-	user, err := suite.db.CreateUser("johndoe", passwordHash)
-	require.NoError(suite.T(), err)
-	assert.NotNil(suite.T(), user)
-	assert.Greater(suite.T(), user.ID, int64(0))
-	assert.Equal(suite.T(), "johndoe", user.Username)
-	assert.Equal(suite.T(), passwordHash, user.PasswordHash)
-	assert.False(suite.T(), user.CreatedAt.IsZero())
+	user, err := s.db.CreateUser("johndoe", passwordHash)
+	s.Require().NoError(err)
+	s.NotNil(user)
+	s.Positive(user.ID)
+	s.Equal("johndoe", user.Username)
+	s.Equal(passwordHash, user.PasswordHash)
+	s.False(user.CreatedAt.IsZero())
 }
 
-func (suite *UserTestSuite) TestCreateUserDuplicateUsername() {
+func (s *UserTestSuite) TestCreateUserDuplicateUsername() {
 	passwordHash, err := auth.HashPassword("testpassword")
-	require.NoError(suite.T(), err)
+	s.Require().NoError(err)
 
 	// Create first user
-	_, err = suite.db.CreateUser("johndoe", passwordHash)
-	require.NoError(suite.T(), err)
+	_, err = s.db.CreateUser("johndoe", passwordHash)
+	s.Require().NoError(err)
 
 	// Try to create second user with same username
-	_, err = suite.db.CreateUser("johndoe", passwordHash)
-	assert.Error(suite.T(), err, "expected error when creating user with duplicate username")
+	_, err = s.db.CreateUser("johndoe", passwordHash)
+	s.Error(err, "expected error when creating user with duplicate username")
 }
 
-func (suite *UserTestSuite) TestGetUserByID() {
+func (s *UserTestSuite) TestGetUserByID() {
 	passwordHash, err := auth.HashPassword("testpassword")
-	require.NoError(suite.T(), err)
+	s.Require().NoError(err)
 
 	// Create a user
-	createdUser, err := suite.db.CreateUser("janedoe", passwordHash)
-	require.NoError(suite.T(), err)
+	createdUser, err := s.db.CreateUser("janedoe", passwordHash)
+	s.Require().NoError(err)
 
 	// Retrieve the user by ID
-	retrievedUser, err := suite.db.GetUserByID(createdUser.ID)
-	require.NoError(suite.T(), err)
-	assert.Equal(suite.T(), createdUser.ID, retrievedUser.ID)
-	assert.Equal(suite.T(), createdUser.Username, retrievedUser.Username)
-	assert.Equal(suite.T(), createdUser.PasswordHash, retrievedUser.PasswordHash)
+	retrievedUser, err := s.db.GetUserByID(createdUser.ID)
+	s.Require().NoError(err)
+	s.Equal(createdUser.ID, retrievedUser.ID)
+	s.Equal(createdUser.Username, retrievedUser.Username)
+	s.Equal(createdUser.PasswordHash, retrievedUser.PasswordHash)
 }
 
-func (suite *UserTestSuite) TestGetUserByIDNotFound() {
+func (s *UserTestSuite) TestGetUserByIDNotFound() {
 	// Try to get a user that doesn't exist
-	_, err := suite.db.GetUserByID(99999)
-	assert.Error(suite.T(), err, "expected error when getting non-existent user")
+	_, err := s.db.GetUserByID(99999)
+	s.Error(err, "expected error when getting non-existent user")
 }
 
-func (suite *UserTestSuite) TestGetUserByUsername() {
+func (s *UserTestSuite) TestGetUserByUsername() {
 	passwordHash, err := auth.HashPassword("testpassword")
-	require.NoError(suite.T(), err)
+	s.Require().NoError(err)
 
 	// Create a user
-	createdUser, err := suite.db.CreateUser("bobsmith", passwordHash)
-	require.NoError(suite.T(), err)
+	createdUser, err := s.db.CreateUser("bobsmith", passwordHash)
+	s.Require().NoError(err)
 
 	// Retrieve the user by username
-	retrievedUser, err := suite.db.GetUserByUsername("bobsmith")
-	require.NoError(suite.T(), err)
-	assert.Equal(suite.T(), createdUser.ID, retrievedUser.ID)
-	assert.Equal(suite.T(), createdUser.Username, retrievedUser.Username)
-	assert.Equal(suite.T(), createdUser.PasswordHash, retrievedUser.PasswordHash)
+	retrievedUser, err := s.db.GetUserByUsername("bobsmith")
+	s.Require().NoError(err)
+	s.Equal(createdUser.ID, retrievedUser.ID)
+	s.Equal(createdUser.Username, retrievedUser.Username)
+	s.Equal(createdUser.PasswordHash, retrievedUser.PasswordHash)
 }
 
-func (suite *UserTestSuite) TestGetUserByUsernameNotFound() {
+func (s *UserTestSuite) TestGetUserByUsernameNotFound() {
 	// Try to get a user that doesn't exist
-	_, err := suite.db.GetUserByUsername("nonexistent")
-	assert.Error(suite.T(), err, "expected error when getting non-existent user")
+	_, err := s.db.GetUserByUsername("nonexistent")
+	s.Error(err, "expected error when getting non-existent user")
 }
 
-func (suite *UserTestSuite) TestUserCount() {
+func (s *UserTestSuite) TestUserCount() {
 	passwordHash, err := auth.HashPassword("testpassword")
-	require.NoError(suite.T(), err)
+	s.Require().NoError(err)
 
 	// Initially should have 0 users
-	count, err := suite.db.UserCount()
-	require.NoError(suite.T(), err)
-	assert.Equal(suite.T(), 0, count)
+	count, err := s.db.UserCount()
+	s.Require().NoError(err)
+	s.Equal(0, count)
 
 	// Create first user
-	_, err = suite.db.CreateUser("user1", passwordHash)
-	require.NoError(suite.T(), err)
+	_, err = s.db.CreateUser("user1", passwordHash)
+	s.Require().NoError(err)
 
-	count, err = suite.db.UserCount()
-	require.NoError(suite.T(), err)
-	assert.Equal(suite.T(), 1, count)
+	count, err = s.db.UserCount()
+	s.Require().NoError(err)
+	s.Equal(1, count)
 
 	// Create second user
-	_, err = suite.db.CreateUser("user2", passwordHash)
-	require.NoError(suite.T(), err)
+	_, err = s.db.CreateUser("user2", passwordHash)
+	s.Require().NoError(err)
 
-	count, err = suite.db.UserCount()
-	require.NoError(suite.T(), err)
-	assert.Equal(suite.T(), 2, count)
+	count, err = s.db.UserCount()
+	s.Require().NoError(err)
+	s.Equal(2, count)
 
 	// Create third user
-	_, err = suite.db.CreateUser("user3", passwordHash)
-	require.NoError(suite.T(), err)
+	_, err = s.db.CreateUser("user3", passwordHash)
+	s.Require().NoError(err)
 
-	count, err = suite.db.UserCount()
-	require.NoError(suite.T(), err)
-	assert.Equal(suite.T(), 3, count)
+	count, err = s.db.UserCount()
+	s.Require().NoError(err)
+	s.Equal(3, count)
 }
 
 // Test suite runner

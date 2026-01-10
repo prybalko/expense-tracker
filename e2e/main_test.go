@@ -87,7 +87,7 @@ func runTestMain(m *testing.M) int {
 
 // waitForServer waits for the server to become ready
 func waitForServer(url string, maxAttempts int, interval time.Duration) bool {
-	for i := 0; i < maxAttempts; i++ {
+	for range maxAttempts {
 		time.Sleep(interval)
 		resp, err := http.Get(url + "/expenses")
 		if err == nil {

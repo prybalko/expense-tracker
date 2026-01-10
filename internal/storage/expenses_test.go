@@ -4,8 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -16,37 +14,37 @@ type ExpenseTestSuite struct {
 }
 
 // SetupTest runs before each test
-func (suite *ExpenseTestSuite) SetupTest() {
+func (s *ExpenseTestSuite) SetupTest() {
 	db, err := NewDB(":memory:")
-	require.NoError(suite.T(), err, "failed to create test database")
-	suite.db = db
+	s.Require().NoError(err, "failed to create test database")
+	s.db = db
 }
 
 // TearDownTest runs after each test
-func (suite *ExpenseTestSuite) TearDownTest() {
-	if suite.db != nil {
-		suite.db.Close()
+func (s *ExpenseTestSuite) TearDownTest() {
+	if s.db != nil {
+		s.db.Close()
 	}
 }
 
-func (suite *ExpenseTestSuite) TestCreateExpense() {
-	err := suite.db.CreateExpense(10.50, "Lunch", "food", time.Now())
-	assert.NoError(suite.T(), err)
+func (s *ExpenseTestSuite) TestCreateExpense() {
+	err := s.db.CreateExpense(10.50, "Lunch", "food", time.Now())
+	s.NoError(err)
 }
 
-func (suite *ExpenseTestSuite) TestCreateMultipleExpensesWithSameTimestamp() {
+func (s *ExpenseTestSuite) TestCreateMultipleExpensesWithSameTimestamp() {
 	now := time.Now()
 
 	// First insert should succeed
-	err := suite.db.CreateExpense(10.00, "First", "test", now)
-	require.NoError(suite.T(), err)
+	err := s.db.CreateExpense(10.00, "First", "test", now)
+	s.Require().NoError(err)
 
 	// Second insert with same timestamp (currently no unique constraint, so this will succeed)
-	err = suite.db.CreateExpense(20.00, "Second", "test", now)
-	assert.NoError(suite.T(), err)
+	err = s.db.CreateExpense(20.00, "Second", "test", now)
+	s.NoError(err)
 }
 
-func (suite *ExpenseTestSuite) TestListExpenses() {
+func (s *ExpenseTestSuite) TestListExpenses() {
 	baseTime := time.Now().Add(time.Hour)
 
 	// Create test expenses
@@ -62,22 +60,22 @@ func (suite *ExpenseTestSuite) TestListExpenses() {
 	}
 
 	for _, exp := range expenses {
-		err := suite.db.CreateExpense(exp.amount, exp.description, exp.category, baseTime.Add(exp.offset))
-		require.NoError(suite.T(), err, "failed to create expense: %s", exp.description)
+		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, baseTime.Add(exp.offset))
+		s.Require().NoError(err, "failed to create expense: %s", exp.description)
 	}
 
-	result, err := suite.db.ListExpenses()
-	require.NoError(suite.T(), err)
-	assert.Len(suite.T(), result, 3, "expected 3 expenses")
+	result, err := s.db.ListExpenses()
+	s.Require().NoError(err)
+	s.Len(result, 3, "expected 3 expenses")
 
 	// Check order (latest first). Snack was added last with latest timestamp
 	if len(result) > 0 {
-		assert.Equal(suite.T(), 15.00, result[0].Amount, "expected first expense to be Snack")
-		assert.Equal(suite.T(), "Snack", result[0].Description)
+		s.InDelta(15.00, result[0].Amount, 0.001, "expected first expense to be Snack")
+		s.Equal("Snack", result[0].Description)
 	}
 }
 
-func (suite *ExpenseTestSuite) TestListExpensesCurrentMonth() {
+func (s *ExpenseTestSuite) TestListExpensesCurrentMonth() {
 	now := time.Now()
 	currentMonth := time.Date(now.Year(), now.Month(), 15, 12, 0, 0, 0, now.Location())
 	lastMonth := time.Date(now.Year(), now.Month()-1, 15, 12, 0, 0, 0, now.Location())
@@ -97,27 +95,27 @@ func (suite *ExpenseTestSuite) TestListExpensesCurrentMonth() {
 	}
 
 	for _, exp := range testExpenses {
-		err := suite.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date)
-		require.NoError(suite.T(), err, "failed to create expense: %s", exp.description)
+		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date)
+		s.Require().NoError(err, "failed to create expense: %s", exp.description)
 	}
 
 	// List expenses should only return current month
-	expenses, err := suite.db.ListExpenses()
-	require.NoError(suite.T(), err)
-	assert.Len(suite.T(), expenses, 2, "expected only current month expenses")
+	expenses, err := s.db.ListExpenses()
+	s.Require().NoError(err)
+	s.Len(expenses, 2, "expected only current month expenses")
 
 	// Verify all returned expenses are from current month
 	for _, exp := range expenses {
-		assert.Equal(suite.T(), now.Month(), exp.Date.Month(), "expense month mismatch")
-		assert.Equal(suite.T(), now.Year(), exp.Date.Year(), "expense year mismatch")
+		s.Equal(now.Month(), exp.Date.Month(), "expense month mismatch")
+		s.Equal(now.Year(), exp.Date.Year(), "expense year mismatch")
 	}
 
 	// Verify the expenses are the correct ones (ordered by date DESC)
-	if assert.Len(suite.T(), expenses, 2) {
-		assert.Equal(suite.T(), "Current Month 2", expenses[0].Description)
-		assert.Equal(suite.T(), 150.00, expenses[0].Amount)
-		assert.Equal(suite.T(), "Current Month 1", expenses[1].Description)
-		assert.Equal(suite.T(), 100.00, expenses[1].Amount)
+	if s.Len(expenses, 2) {
+		s.Equal("Current Month 2", expenses[0].Description)
+		s.InDelta(150.00, expenses[0].Amount, 0.001)
+		s.Equal("Current Month 1", expenses[1].Description)
+		s.InDelta(100.00, expenses[1].Amount, 0.001)
 	}
 }
 
