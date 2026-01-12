@@ -32,21 +32,23 @@ func NewHandlers(db *storage.DB, templateDir string, secureCookie bool) *Handler
 
 // CategoryDef defines the properties of a category.
 type CategoryDef struct {
-	ID    string
 	Name  string
 	Icon  string
 	Color string
 }
 
 var categories = []CategoryDef{
-	{"groceries", "Groceries", "🛒", "#60a5fa"},
-	{"eating out", "Eating Out", "🍴", "#60a5fa"},
-	{"transport", "Transport", "🚌", "#a78bfa"},
-	{"entertainment", "Entertainment", "🎮", "#f472b6"},
-	{"utilities", "Utilities", "💡", "#fbbf24"},
-	{"housing", "Housing", "🏠", "#818cf8"},
-	{"gifts", "Gifts", "🎁", "#fb7185"},
-	{"other", "Other", "📦", "#94a3b8"},
+	{"Groceries", "🛒", "#60a5fa"},
+	{"Eating Out", "🍴", "#60a5fa"},
+	{"Transport", "🚌", "#a78bfa"},
+	{"Housing", "🏠", "#818cf8"},
+	{"Utilities", "💡", "#fbbf24"},
+	{"Sport", "🏋️‍♂️", "#fbbf24"},
+	{"Health", "🚑", "#fbbf24"},
+	{"Entertainment", "🎮", "#f472b6"},
+	{"Travel", "✈️", "#f472b6"},
+	{"Gifts", "🎁", "#fb7185"},
+	{"Other", "📦", "#94a3b8"},
 }
 
 // CategoryStyle defines the visual style for a category.

@@ -21,9 +21,8 @@ func GetUserFromContext(r *http.Request) *models.User {
 }
 
 func getCategoryStyle(category string) CategoryStyle {
-	catLower := strings.ToLower(category)
 	for _, c := range categories {
-		if c.ID == catLower {
+		if c.Name == category {
 			return CategoryStyle{Icon: c.Icon, Color: c.Color}
 		}
 	}
@@ -35,11 +34,11 @@ func parseForm(r *http.Request) (amount float64, desc, category string, date tim
 		return 0, "", "", time.Time{}, err
 	}
 	amount, _ = strconv.ParseFloat(r.FormValue("amount"), 64)
+	category = r.FormValue("category")
 	desc = r.FormValue("description")
 	if desc == "" {
-		desc = "Expense"
+		desc = category
 	}
-	category = r.FormValue("category")
 	dateStr := r.FormValue("date")
 	if dateStr == "" {
 		return 0, "", "", time.Time{}, errors.New("date is required")

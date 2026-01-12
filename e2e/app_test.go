@@ -118,7 +118,7 @@ func (s *E2ETestSuite) TestCompleteUserFlow() {
 
 	// Select category
 	_, err = s.page.Locator("select[name=category]").SelectOption(playwright.SelectOptionValues{
-		Values: &[]string{"groceries"},
+		Values: &[]string{"Groceries"},
 	})
 	s.Require().NoError(err, "failed to select category")
 
@@ -136,6 +136,10 @@ func (s *E2ETestSuite) TestCompleteUserFlow() {
 
 	err = s.expect.Locator(item.Locator(".expense-amount")).ToContainText("12.50")
 	s.Require().NoError(err, "amount mismatch")
+
+	// Verify category icon matches (groceries = 🛒)
+	err = s.expect.Locator(item.Locator(".cat-icon")).ToContainText("🛒")
+	s.Require().NoError(err, "category icon mismatch, expected groceries icon 🛒")
 }
 
 func (s *E2ETestSuite) TestAddExpenseToBlankList() {
@@ -185,6 +189,11 @@ func (s *E2ETestSuite) TestAddExpenseToBlankList() {
 	// Verify the total is updated
 	err = s.expect.Locator(s.page.Locator(".total")).ToContainText("25.99")
 	s.Require().NoError(err, "total should be updated to 25.99")
+
+	// Verify default category icon (groceries = 🛒)
+	item := s.page.Locator(".expense-item").First()
+	err = s.expect.Locator(item.Locator(".cat-icon")).ToContainText("🛒")
+	s.Require().NoError(err, "category icon mismatch, expected default groceries icon 🛒")
 }
 
 func (s *E2ETestSuite) TestEditExpenseFlow() {
@@ -200,7 +209,7 @@ func (s *E2ETestSuite) TestEditExpenseFlow() {
 
 	// Select "transport" category (non-default)
 	_, err = s.page.Locator("select[name=category]").SelectOption(playwright.SelectOptionValues{
-		Values: &[]string{"transport"},
+		Values: &[]string{"Transport"},
 	})
 	s.Require().NoError(err, "failed to select category")
 
@@ -246,6 +255,10 @@ func (s *E2ETestSuite) TestEditExpenseFlow() {
 
 	err = s.expect.Locator(item.Locator(".expense-amount")).ToContainText("50.00")
 	s.Require().NoError(err, "original amount not found")
+
+	// Verify category icon matches (transport = 🚌)
+	err = s.expect.Locator(item.Locator(".cat-icon")).ToContainText("🚌")
+	s.Require().NoError(err, "category icon mismatch, expected transport icon 🚌")
 
 	// 2. Click on the item to edit
 	err = item.Click()
@@ -310,6 +323,10 @@ func (s *E2ETestSuite) TestEditExpenseFlow() {
 
 	err = s.expect.Locator(newItem.Locator(".expense-amount")).ToContainText("40.00")
 	s.Require().NoError(err, "updated amount not found")
+
+	// Verify category icon still matches (transport = 🚌)
+	err = s.expect.Locator(newItem.Locator(".cat-icon")).ToContainText("🚌")
+	s.Require().NoError(err, "category icon mismatch after edit, expected transport icon 🚌")
 
 	// Verify total reflects the change (was 50.00, now 40.00)
 	err = s.expect.Locator(s.page.Locator(".total")).ToContainText("40.00")

@@ -30,7 +30,7 @@
             <label class="selector">
                 <select name="category" id="category-select" onchange="updateCategoryDisplay(this)">
                     {{range .Categories}}
-                    <option value="{{.ID}}"{{if and $.IsEdit (eq $.Expense.Category .ID)}} selected{{end}}>{{.Icon}} {{.Name}}</option>
+                    <option value="{{.Name}}"{{if and $.IsEdit (eq $.Expense.Category .Name)}} selected{{end}}>{{.Icon}} {{.Name}}</option>
                     {{end}}
                 </select>
                 <div class="selector-btn">
@@ -80,7 +80,7 @@
     <script>
     (function() {
         const icons = {
-            {{range .Categories}}"{{.ID}}":"{{.Icon}}",{{end}}
+            {{range .Categories}}"{{.Name}}":"{{.Icon}}",{{end}}
         };
         let amt = document.getElementById('amount-input').value || '0';
         if (amt.includes('.')) amt = parseFloat(amt).toString();
