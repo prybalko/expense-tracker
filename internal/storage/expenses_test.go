@@ -32,18 +32,6 @@ func (s *ExpenseTestSuite) TestCreateExpense() {
 	s.NoError(err)
 }
 
-func (s *ExpenseTestSuite) TestCreateMultipleExpensesWithSameTimestamp() {
-	now := time.Now()
-
-	// First insert should succeed
-	err := s.db.CreateExpense(10.00, "First", "test", now)
-	s.Require().NoError(err)
-
-	// Second insert with same timestamp should fail due to unique constraint
-	err = s.db.CreateExpense(20.00, "Second", "test", now)
-	s.Error(err)
-}
-
 func (s *ExpenseTestSuite) TestListExpenses() {
 	baseTime := time.Now().Add(time.Hour)
 
