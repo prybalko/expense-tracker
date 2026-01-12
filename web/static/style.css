@@ -75,7 +75,6 @@ body {
 
 .summary .total {
   font-size: clamp(3rem, 10vw, 3.5rem);
-  font-weight: 500;
   margin-top: 0.25rem;
 }
 
@@ -145,7 +144,7 @@ body {
 }
 
 .expense-amount {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .expense-amount.income { color: #22c55e; }
@@ -181,6 +180,7 @@ body {
   color: var(--surface);
   font-size: 2rem;
   font-weight: 300;
+  padding: 0 0 5px;
 }
 
 /* ========== Create Screen ========== */

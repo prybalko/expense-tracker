@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 )
 
 // ListExpenses renders the list of expenses.
@@ -37,7 +36,6 @@ func (h *Handlers) ListExpenses(w http.ResponseWriter, r *http.Request) {
 			Category:      e.Category,
 			Time:          e.Date.Format("15:04"),
 			CategoryStyle: getCategoryStyle(e.Category),
-			IsIncome:      strings.Contains(e.Description, "[Income]"),
 		})
 	}
 
