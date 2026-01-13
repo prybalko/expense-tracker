@@ -40,6 +40,7 @@ func setupRouter(h *handlers.Handlers, staticDir string) *http.ServeMux {
 	mux.Handle("POST /expenses", h.AuthMiddleware(http.HandlerFunc(h.CreateExpense)))
 	mux.Handle("GET /expenses/{id}/edit", h.AuthMiddleware(http.HandlerFunc(h.EditExpenseForm)))
 	mux.Handle("POST /expenses/{id}", h.AuthMiddleware(http.HandlerFunc(h.UpdateExpense)))
+	mux.Handle("DELETE /expenses/{id}", h.AuthMiddleware(http.HandlerFunc(h.DeleteExpense)))
 	mux.Handle("GET /statistics", h.AuthMiddleware(http.HandlerFunc(h.Statistics)))
 
 	return mux

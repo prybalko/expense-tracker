@@ -7,13 +7,13 @@ import (
 )
 
 // CreateExpense inserts a new expense into the database.
-func (db *DB) CreateExpense(amount float64, description, category string, date time.Time) error {
+func (db *DB) CreateExpense(amount float64, description, category string, date time.Time, userID int64) error {
 	if date.IsZero() {
 		date = time.Now()
 	}
 	_, err := db.conn.Exec(
-		"INSERT INTO expenses (amount, description, category, date) VALUES (?, ?, ?, ?)",
-		amount, description, category, date,
+		"INSERT INTO expenses (amount, description, category, date, user_id) VALUES (?, ?, ?, ?, ?)",
+		amount, description, category, date, userID,
 	)
 	return err
 }
@@ -38,6 +38,12 @@ func (db *DB) UpdateExpense(e *models.Expense) error {
 		"UPDATE expenses SET amount = ?, description = ?, category = ?, date = ? WHERE id = ?",
 		e.Amount, e.Description, e.Category, e.Date, e.ID,
 	)
+	return err
+}
+
+// DeleteExpense removes an expense from the database by ID.
+func (db *DB) DeleteExpense(id int64) error {
+	_, err := db.conn.Exec("DELETE FROM expenses WHERE id = ?", id)
 	return err
 }
 

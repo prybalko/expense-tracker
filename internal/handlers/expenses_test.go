@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"context"
+	"expense-tracker/internal/models"
+	"expense-tracker/internal/storage"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -8,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"expense-tracker/internal/storage"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -38,6 +39,11 @@ func (s *ExpenseHandlerTestSuite) TearDownTest() {
 	if s.db != nil {
 		s.db.Close()
 	}
+}
+
+func (s *ExpenseHandlerTestSuite) addUserContext(req *http.Request) *http.Request {
+	ctx := context.WithValue(req.Context(), UserContextKey, &models.User{ID: 1, Username: "testuser"})
+	return req.WithContext(ctx)
 }
 
 func (s *ExpenseHandlerTestSuite) TestListExpenses() {
@@ -69,6 +75,7 @@ func (s *ExpenseHandlerTestSuite) TestCreateExpense() {
 
 	req := httptest.NewRequest("POST", "/expenses", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = s.addUserContext(req)
 	w := httptest.NewRecorder()
 
 	h.CreateExpense(w, req)
@@ -99,13 +106,14 @@ func (s *ExpenseHandlerTestSuite) TestCreateExpense_LegacyFormat() {
 
 	req := httptest.NewRequest("POST", "/expenses", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = s.addUserContext(req)
 	w := httptest.NewRecorder()
 
 	h.CreateExpense(w, req)
 
 	resp := w.Result()
 	s.Equal(http.StatusOK, resp.StatusCode)
-	
+
 	expenses, err := s.db.ListExpenses()
 	s.Require().NoError(err)
 	s.Require().Len(expenses, 1)
@@ -123,6 +131,7 @@ func (s *ExpenseHandlerTestSuite) TestCreateExpense_MissingDate() {
 
 	req := httptest.NewRequest("POST", "/expenses", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = s.addUserContext(req)
 	w := httptest.NewRecorder()
 
 	h.CreateExpense(w, req)
@@ -169,7 +178,7 @@ func (s *ExpenseHandlerTestSuite) TestStatistics_WithExpenses() {
 		form.Add("amount", strings.TrimSpace(strings.Split(strings.TrimPrefix(http.StatusText(int(exp.amount*100)), ""), " ")[0]))
 		form.Add("amount", http.StatusText(int(exp.amount)))
 		// Let's use a simpler approach
-		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, parseTestDate(exp.date))
+		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, parseTestDate(exp.date), 1)
 		s.Require().NoError(err, "failed to create test expense")
 	}
 
@@ -245,7 +254,7 @@ func (s *ExpenseHandlerTestSuite) TestStatistics_CategoryPercentages() {
 	}
 
 	for _, exp := range testExpenses {
-		err := s.db.CreateExpense(exp.amount, "Test", exp.category, parseTestDate(exp.date))
+		err := s.db.CreateExpense(exp.amount, "Test", exp.category, parseTestDate(exp.date), 1)
 		s.Require().NoError(err)
 	}
 
@@ -282,7 +291,7 @@ func (s *ExpenseHandlerTestSuite) TestStatistics_TransactionCount() {
 
 	// Create multiple expenses in same category
 	for i := 1; i <= 3; i++ {
-		err := s.db.CreateExpense(10.00, "Coffee", "eating out", parseTestDate("2026-04-15T12:00:00").Add(time.Duration(i)*time.Hour))
+		err := s.db.CreateExpense(10.00, "Coffee", "eating out", parseTestDate("2026-04-15T12:00:00").Add(time.Duration(i)*time.Hour), 1)
 		s.Require().NoError(err)
 	}
 
@@ -296,6 +305,59 @@ func (s *ExpenseHandlerTestSuite) TestStatistics_TransactionCount() {
 
 	body := w.Body.String()
 	s.Contains(body, "3 transactions", "should show transaction count")
+}
+
+func (s *ExpenseHandlerTestSuite) TestDeleteExpense() {
+	h := NewHandlers(s.db, s.templateDir, false)
+
+	// Create an expense first
+	err := s.db.CreateExpense(50.00, "To Delete", "food", parseTestDate("2026-01-10T12:00:00"), 1)
+	s.Require().NoError(err)
+
+	// Get the expense ID
+	expenses, err := s.db.ListExpenses()
+	s.Require().NoError(err)
+	s.Require().Len(expenses, 1)
+	expenseID := expenses[0].ID
+
+	// Send DELETE request
+	req := httptest.NewRequest("DELETE", "/expenses/"+string(rune(expenseID+'0')), http.NoBody)
+	req.SetPathValue("id", string(rune(expenseID + '0')))
+	w := httptest.NewRecorder()
+
+	// Use a proper path value approach
+	req = httptest.NewRequest("DELETE", "/expenses/1", http.NoBody)
+	req.SetPathValue("id", "1")
+	w = httptest.NewRecorder()
+
+	h.DeleteExpense(w, req)
+
+	resp := w.Result()
+	s.Equal(http.StatusOK, resp.StatusCode)
+
+	// Check for HTMX redirect header
+	expectedLoc := `{"path":"/expenses", "target":"#content"}`
+	s.Equal(expectedLoc, resp.Header.Get("HX-Location"))
+
+	// Verify expense is deleted
+	expenses, err = s.db.ListExpenses()
+	s.Require().NoError(err)
+	s.Empty(expenses, "expected expense to be deleted")
+}
+
+func (s *ExpenseHandlerTestSuite) TestDeleteExpense_NonExistent() {
+	h := NewHandlers(s.db, s.templateDir, false)
+
+	// Send DELETE request for non-existent expense
+	req := httptest.NewRequest("DELETE", "/expenses/99999", http.NoBody)
+	req.SetPathValue("id", "99999")
+	w := httptest.NewRecorder()
+
+	h.DeleteExpense(w, req)
+
+	// Should still return OK (no-op for non-existent)
+	resp := w.Result()
+	s.Equal(http.StatusOK, resp.StatusCode)
 }
 
 // Helper function to parse test dates

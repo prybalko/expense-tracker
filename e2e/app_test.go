@@ -333,6 +333,98 @@ func (s *E2ETestSuite) TestEditExpenseFlow() {
 	s.Require().NoError(err, "total not updated")
 }
 
+func (s *E2ETestSuite) TestDeleteExpenseFlow() {
+	// Login
+	s.login()
+
+	// 1. Add an expense to delete
+	err := s.page.Locator(".fab-add").Click()
+	s.Require().NoError(err, "failed to click add button")
+
+	err = s.expect.Locator(s.page.Locator("#expense-form")).ToBeVisible()
+	s.Require().NoError(err, "expense form not visible")
+
+	// Set amount to 99.99
+	keys := []string{"9", "9", ".", "9", "9"}
+	for _, key := range keys {
+		err = s.page.Locator("button:text-is('" + key + "')").Click()
+		s.Require().NoError(err, "failed to click key %s", key)
+	}
+
+	// Fill description
+	err = s.page.Locator("input[name=description]").Fill("To Be Deleted")
+	s.Require().NoError(err, "failed to fill description")
+
+	// Submit
+	err = s.page.Locator("button.submit").Click()
+	s.Require().NoError(err, "failed to submit expense")
+
+	// Verify it exists in the list
+	err = s.expect.Locator(s.page.Locator(".expense-item")).ToHaveCount(1)
+	s.Require().NoError(err, "expense item not found in list")
+
+	item := s.page.Locator(".expense-item").First()
+	err = s.expect.Locator(item.Locator(".expense-details strong")).ToHaveText("To Be Deleted")
+	s.Require().NoError(err, "expense description not found")
+
+	// Verify total shows our expense
+	err = s.expect.Locator(s.page.Locator(".total")).ToContainText("99.99")
+	s.Require().NoError(err, "total should show 99.99")
+
+	// 2. Click on the item to edit
+	err = item.Click()
+	s.Require().NoError(err, "failed to click expense item")
+
+	// Verify edit screen is shown
+	err = s.expect.Locator(s.page.Locator("#expense-form")).ToBeVisible()
+	s.Require().NoError(err, "edit form not visible")
+
+	// Verify the remove button is visible (only on edit screen)
+	err = s.expect.Locator(s.page.Locator(".remove-btn")).ToBeVisible()
+	s.Require().NoError(err, "remove button should be visible on edit screen")
+
+	// 3. Click the remove button and accept the confirmation
+	s.page.OnDialog(func(dialog playwright.Dialog) {
+		dialog.Accept()
+	})
+
+	err = s.page.Locator(".remove-btn").Click()
+	s.Require().NoError(err, "failed to click remove button")
+
+	// 4. Verify we're back on the list and the expense is gone
+	err = s.expect.Locator(s.page.Locator(".list-screen")).ToBeVisible()
+	s.Require().NoError(err, "should be back on list screen")
+
+	// Verify the expense is deleted (no items in list)
+	err = s.expect.Locator(s.page.Locator(".expense-item")).ToHaveCount(0)
+	s.Require().NoError(err, "expense should be deleted")
+
+	// Verify total is back to 0.00
+	err = s.expect.Locator(s.page.Locator(".total")).ToContainText("0.00")
+	s.Require().NoError(err, "total should be 0.00 after deletion")
+}
+
+func (s *E2ETestSuite) TestDeleteButtonNotVisibleOnCreate() {
+	// Login
+	s.login()
+
+	// Open create form
+	err := s.page.Locator(".fab-add").Click()
+	s.Require().NoError(err, "failed to click add button")
+
+	err = s.expect.Locator(s.page.Locator("#expense-form")).ToBeVisible()
+	s.Require().NoError(err, "expense form not visible")
+
+	// Verify the remove button is NOT visible on create screen
+	count, err := s.page.Locator(".remove-btn").Count()
+	s.Require().NoError(err, "failed to count remove buttons")
+	s.Equal(0, count, "remove button should not be visible on create screen")
+
+	// Verify the backspace button IS visible
+	err = s.expect.Locator(s.page.Locator(".delete-btn")).ToBeVisible()
+	s.Require().NoError(err, "backspace button should be visible")
+}
+
 // TestE2ESuite runs the e2e test suite
 func TestE2ESuite(t *testing.T) {
 	suite.Run(t, new(E2ETestSuite))

@@ -111,7 +111,6 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0.4rem 0;
-  font-size: 1.2rem;
   cursor: pointer;
   transition: opacity 0.15s;
 }
@@ -245,7 +244,8 @@ body {
   vertical-align: super;
 }
 
-.delete-btn {
+.delete-btn,
+.remove-btn {
   position: absolute;
   right: 1rem;
   width: 36px;
@@ -262,13 +262,27 @@ body {
   transition: background 0.15s, color 0.15s;
 }
 
-.delete-btn:hover {
+.remove-btn {
+  right: 3.5rem;
+}
+
+.delete-btn:hover,
+.remove-btn:hover {
   background: var(--text);
   color: var(--surface);
 }
 
 .delete-btn:active {
   background: var(--accent);
+}
+
+.remove-btn:hover {
+  background: #ef4444;
+  color: white;
+}
+
+.remove-btn:active {
+  background: #dc2626;
 }
 
 .note-input {

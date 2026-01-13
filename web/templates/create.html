@@ -14,6 +14,7 @@
                 <div class="amount-hero">
                     <span class="currency">€</span><span id="display-amount">{{if .IsEdit}}{{printf "%.2f" .Expense.Amount}}{{else}}0{{end}}</span>
                 </div>
+                {{if .IsEdit}}<button type="button" class="remove-btn" hx-delete="/expenses/{{.Expense.ID}}" hx-target="#content" hx-confirm="Delete this expense?">🗑</button>{{end}}
                 <button type="button" class="delete-btn" onclick="backspace()">⌫</button>
             </div>
             <input type="hidden" name="amount" id="amount-input" value="{{if .IsEdit}}{{printf "%.2f" .Expense.Amount}}{{else}}0{{end}}">

@@ -78,7 +78,14 @@ func (h *Handlers) CreateExpense(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := h.db.CreateExpense(amount, desc, cat, date); err != nil {
+
+	user, ok := r.Context().Value(UserContextKey).(*models.User)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.db.CreateExpense(amount, desc, cat, date, user.ID); err != nil {
 		log.Printf("CreateExpense error: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -98,6 +105,17 @@ func (h *Handlers) UpdateExpense(w http.ResponseWriter, r *http.Request) {
 		ID: id, Amount: amount, Description: desc, Category: cat, Date: date,
 	}); err != nil {
 		log.Printf("UpdateExpense error: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("HX-Location", `{"path":"/expenses", "target":"#content"}`)
+}
+
+// DeleteExpense handles the deletion of an expense.
+func (h *Handlers) DeleteExpense(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err := h.db.DeleteExpense(id); err != nil {
+		log.Printf("DeleteExpense error: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}

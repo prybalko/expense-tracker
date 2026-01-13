@@ -28,8 +28,74 @@ func (s *ExpenseTestSuite) TearDownTest() {
 }
 
 func (s *ExpenseTestSuite) TestCreateExpense() {
-	err := s.db.CreateExpense(10.50, "Lunch", "food", time.Now())
+	err := s.db.CreateExpense(10.50, "Lunch", "food", time.Now(), 1)
 	s.NoError(err)
+}
+
+func (s *ExpenseTestSuite) TestDeleteExpense() {
+	// Create an expense
+	err := s.db.CreateExpense(25.00, "Dinner", "food", time.Now(), 1)
+	s.Require().NoError(err)
+
+	// Get the expense to find its ID
+	expenses, err := s.db.ListExpenses()
+	s.Require().NoError(err)
+	s.Require().Len(expenses, 1)
+	expenseID := expenses[0].ID
+
+	// Delete the expense
+	err = s.db.DeleteExpense(expenseID)
+	s.NoError(err)
+
+	// Verify it's gone
+	expenses, err = s.db.ListExpenses()
+	s.Require().NoError(err)
+	s.Empty(expenses, "expected no expenses after deletion")
+}
+
+func (s *ExpenseTestSuite) TestDeleteExpense_NonExistent() {
+	// Deleting a non-existent expense should not error (no-op)
+	err := s.db.DeleteExpense(99999)
+	s.NoError(err, "deleting non-existent expense should not error")
+}
+
+func (s *ExpenseTestSuite) TestDeleteExpense_OnlyDeletesTarget() {
+	baseTime := time.Now()
+
+	// Create multiple expenses
+	err := s.db.CreateExpense(10.00, "Coffee", "food", baseTime, 1)
+	s.Require().NoError(err)
+	err = s.db.CreateExpense(20.00, "Lunch", "food", baseTime.Add(time.Minute), 1)
+	s.Require().NoError(err)
+	err = s.db.CreateExpense(30.00, "Dinner", "food", baseTime.Add(2*time.Minute), 1)
+	s.Require().NoError(err)
+
+	// Get all expenses
+	expenses, err := s.db.ListExpenses()
+	s.Require().NoError(err)
+	s.Require().Len(expenses, 3)
+
+	// Find the "Lunch" expense and delete it
+	var lunchID int64
+	for _, e := range expenses {
+		if e.Description == "Lunch" {
+			lunchID = e.ID
+			break
+		}
+	}
+	s.Require().NotZero(lunchID, "could not find Lunch expense")
+
+	err = s.db.DeleteExpense(lunchID)
+	s.NoError(err)
+
+	// Verify only 2 remain and Lunch is gone
+	expenses, err = s.db.ListExpenses()
+	s.Require().NoError(err)
+	s.Len(expenses, 2, "expected 2 expenses after deletion")
+
+	for _, e := range expenses {
+		s.NotEqual("Lunch", e.Description, "Lunch expense should have been deleted")
+	}
 }
 
 func (s *ExpenseTestSuite) TestListExpenses() {
@@ -48,7 +114,7 @@ func (s *ExpenseTestSuite) TestListExpenses() {
 	}
 
 	for _, exp := range expenses {
-		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, baseTime.Add(exp.offset))
+		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, baseTime.Add(exp.offset), 1)
 		s.Require().NoError(err, "failed to create expense: %s", exp.description)
 	}
 
@@ -83,7 +149,7 @@ func (s *ExpenseTestSuite) TestListExpensesCurrentMonth() {
 	}
 
 	for _, exp := range testExpenses {
-		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date)
+		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date, 1)
 		s.Require().NoError(err, "failed to create expense: %s", exp.description)
 	}
 
@@ -126,7 +192,7 @@ func (s *ExpenseTestSuite) TestGetExpensesByMonth() {
 	}
 
 	for _, exp := range testExpenses {
-		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date)
+		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date, 1)
 		s.Require().NoError(err, "failed to create expense: %s", exp.description)
 	}
 
@@ -187,7 +253,7 @@ func (s *ExpenseTestSuite) TestGetCategoryTotalsByMonth() {
 	}
 
 	for _, exp := range testExpenses {
-		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date)
+		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date, 1)
 		s.Require().NoError(err, "failed to create expense: %s", exp.description)
 	}
 
@@ -250,7 +316,7 @@ func (s *ExpenseTestSuite) TestGetCategoryTotalsByMonth_SingleCategory() {
 	}
 
 	for _, exp := range expenses {
-		err := s.db.CreateExpense(exp.amount, exp.desc, "eating out", jan2026.Add(time.Hour))
+		err := s.db.CreateExpense(exp.amount, exp.desc, "eating out", jan2026.Add(time.Hour), 1)
 		jan2026 = jan2026.Add(time.Hour)
 		s.Require().NoError(err)
 	}
@@ -272,9 +338,9 @@ func (s *ExpenseTestSuite) TestGetExpensesByMonth_EdgeCases() {
 	// First day of February
 	feb1 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
-	err := s.db.CreateExpense(100.00, "End of January", "groceries", jan31)
+	err := s.db.CreateExpense(100.00, "End of January", "groceries", jan31, 1)
 	s.Require().NoError(err)
-	err = s.db.CreateExpense(200.00, "Start of February", "groceries", feb1)
+	err = s.db.CreateExpense(200.00, "Start of February", "groceries", feb1, 1)
 	s.Require().NoError(err)
 
 	// Get January expenses
