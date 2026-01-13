@@ -45,7 +45,7 @@ func (s *ExpenseTestSuite) TestDeleteExpense() {
 
 	// Delete the expense
 	err = s.db.DeleteExpense(expenseID)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// Verify it's gone
 	expenses, err = s.db.ListExpenses()
@@ -86,7 +86,7 @@ func (s *ExpenseTestSuite) TestDeleteExpense_OnlyDeletesTarget() {
 	s.Require().NotZero(lunchID, "could not find Lunch expense")
 
 	err = s.db.DeleteExpense(lunchID)
-	s.NoError(err)
+	s.Require().NoError(err)
 
 	// Verify only 2 remain and Lunch is gone
 	expenses, err = s.db.ListExpenses()

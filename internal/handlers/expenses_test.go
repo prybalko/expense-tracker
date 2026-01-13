@@ -248,9 +248,9 @@ func (s *ExpenseHandlerTestSuite) TestStatistics_CategoryPercentages() {
 		category string
 		date     string
 	}{
-		{50.00, "groceries", "2026-03-15T12:00:00"},    // 50%
-		{30.00, "transport", "2026-03-16T12:00:00"},    // 30%
-		{20.00, "eating out", "2026-03-17T12:00:00"},   // 20%
+		{50.00, "groceries", "2026-03-15T12:00:00"},  // 50%
+		{30.00, "transport", "2026-03-16T12:00:00"},  // 30%
+		{20.00, "eating out", "2026-03-17T12:00:00"}, // 20%
 	}
 
 	for _, exp := range testExpenses {
@@ -322,13 +322,12 @@ func (s *ExpenseHandlerTestSuite) TestDeleteExpense() {
 
 	// Send DELETE request
 	req := httptest.NewRequest("DELETE", "/expenses/"+string(rune(expenseID+'0')), http.NoBody)
-	req.SetPathValue("id", string(rune(expenseID + '0')))
-	w := httptest.NewRecorder()
+	req.SetPathValue("id", string(rune(expenseID+'0')))
 
 	// Use a proper path value approach
 	req = httptest.NewRequest("DELETE", "/expenses/1", http.NoBody)
 	req.SetPathValue("id", "1")
-	w = httptest.NewRecorder()
+	w := httptest.NewRecorder()
 
 	h.DeleteExpense(w, req)
 
