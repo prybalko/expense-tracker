@@ -31,6 +31,11 @@
     </script>
 </head>
 <body>
+    <!-- Pull to Refresh indicator -->
+    <div class="pull-to-refresh" id="ptr-container">
+        <div class="ptr-spinner"></div>
+    </div>
+
     <main id="content">
         {{template "content" .}}
     </main>
@@ -326,5 +331,7 @@
         });
     })();
     </script>
+
+    <script src="/static/pull-to-refresh.js"></script>
 </body>
 </html>
