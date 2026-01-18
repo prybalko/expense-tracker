@@ -1,133 +1,191 @@
-# Expense Tracker
+<div align="center">
 
-A simple, mobile-first expense tracking web application. Built with **Go** and **HTMX**.
+# 💸 Expense Tracker
 
-## Features
+**A beautiful, mobile-first expense tracking app**
 
-- 📱 **Mobile-First Design**: Optimized for mobile usage with a responsive layout.
-- ⚡ **Fast & Lightweight**: Server-side rendering with Go and HTMX for smooth interactions.
-- 💰 **Quick Entry**: Specialized keypad interface for rapid expense recording.
-- 📋 **Expense History**: Chronological feed of expenses grouped by day.
-- 📊 **Statistics**: Monthly spending breakdown by category with percentages and totals.
-- 🎨 **Modern UI**: Clean, minimalistic interface using custom CSS.
+Built with Go + HTMX for lightning-fast performance
 
-## Project Structure
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
+[![HTMX](https://img.shields.io/badge/HTMX-Powered-3366CC?style=flat-square)](https://htmx.org)
+[![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://sqlite.org)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
-```
-├── cmd/
-│   ├── adduser/          # CLI tool for user management
-│   └── server/           # Application entry point
-├── e2e/                  # End-to-end tests
-├── internal/
-│   ├── auth/             # Authentication logic
-│   ├── handlers/         # HTTP handlers and view logic
-│   ├── models/           # Data models
-│   └── storage/          # Database layer (SQLite)
-├── web/
-│   ├── static/           # Static assets (CSS)
-│   └── templates/        # HTML templates
-├── Dockerfile            # Multi-stage build
-├── docker-compose.yml    # Docker composition
-└── expenses.db           # SQLite database (ignored by git)
-```
+</div>
 
-## Prerequisites
+---
 
-- **Go 1.25+** (for local development)
-- **Docker** (optional, for containerized run)
+## ✨ Screenshots
 
-## Quick Start
+<div align="center">
+<table>
+<tr>
+<td align="center">
+<img src="screenshots/home.png" width="250" alt="Home Screen"/>
+<br/>
+<sub><b>Expense Feed</b></sub>
+</td>
+<td align="center">
+<img src="screenshots/insights.png" width="250" alt="Insights"/>
+<br/>
+<sub><b>Monthly Insights</b></sub>
+</td>
+<td align="center">
+<img src="screenshots/new_expense.png" width="250" alt="Add Expense"/>
+<br/>
+<sub><b>Quick Entry</b></sub>
+</td>
+</tr>
+</table>
+</div>
+
+---
+
+## 🎯 Features
+
+| | Feature | Description |
+|:---:|:---|:---|
+| 📱 | **Mobile-First** | Designed for on-the-go expense tracking |
+| ⚡ | **Instant Response** | Server-side rendering with HTMX — no JavaScript frameworks |
+| 🔢 | **Quick Entry** | Specialized numpad for rapid expense logging |
+| 📅 | **Smart Grouping** | Expenses organized chronologically by day |
+| 📊 | **Visual Insights** | Monthly charts & category breakdowns |
+| 🏷️ | **Categories** | Organize spending by type with emoji icons |
+| 🔒 | **Secure** | User authentication with session management |
+| 🐳 | **Containerized** | One-command deployment with Docker |
+
+---
+
+## 🚀 Quick Start
 
 ### Using Docker (Recommended)
 
 ```bash
 docker-compose up --build
 ```
-The app will be available at [http://localhost:8080](http://localhost:8080).
+
+Open [http://localhost:8080](http://localhost:8080) and start tracking!
 
 ### Running Locally
 
-1. Install dependencies:
-   ```bash
-   go mod download
-   ```
+```bash
+# Install dependencies
+go mod download
 
-2. Run the application:
-   ```bash
-   go run ./cmd/server
-   ```
+# Start the server
+go run ./cmd/server
 
-3. Open your browser at [http://localhost:8080](http://localhost:8080).
+# Visit http://localhost:8080
+```
 
-## Configuration
+---
 
-The application can be configured via environment variables:
+## ⚙️ Configuration
 
 | Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | The port to listen on | `8080` |
-| `DB_PATH` | Path to the SQLite database file | `expenses.db` |
-| `SECURE_COOKIE` | Set to `true` to use secure cookies (HTTPS only) | `false` |
-| `ADMIN_USER` | Username for the initial admin user (created on first run) | `admin` |
-| `ADMIN_PASSWORD` | Password for the initial admin user. If not set, a random one is generated and printed to logs. | Random |
+|:---------|:------------|:--------|
+| `PORT` | Server port | `8080` |
+| `DB_PATH` | SQLite database path | `expenses.db` |
+| `SECURE_COOKIE` | Enable secure cookies (HTTPS) | `false` |
+| `ADMIN_USER` | Initial admin username | `admin` |
+| `ADMIN_PASSWORD` | Initial admin password | *Random* |
 
-## User Management
+> **Note:** On first run without users, the app creates an admin account. If `ADMIN_PASSWORD` is not set, a random password is printed to the logs.
 
-### Initial Setup (Bootstrapping)
+---
 
-On the first run, if no users exist in the database, the application will attempt to create an initial admin user.
-- If `ADMIN_USER` and `ADMIN_PASSWORD` environment variables are set, it uses those credentials.
-- If not set, it creates a user `admin` with a **randomly generated password**, which is printed to the server logs.
+## 📁 Project Structure
 
-### CLI Tool
+```
+expense-tracker/
+├── cmd/
+│   ├── adduser/          # User management CLI
+│   └── server/           # Application entry point
+├── e2e/                  # End-to-end tests (Playwright)
+├── internal/
+│   ├── auth/             # Authentication logic
+│   ├── handlers/         # HTTP request handlers
+│   ├── models/           # Data models
+│   └── storage/          # SQLite database layer
+├── web/
+│   ├── static/           # CSS, JS, icons
+│   └── templates/        # HTML templates
+└── docker-compose.yml    # Container orchestration
+```
 
-To add a new user manually, use the `adduser` CLI tool:
+---
+
+## 👤 User Management
+
+### Add a User via CLI
 
 ```bash
 go run ./cmd/adduser -user <username> -password <password>
-```
 
-You can also specify the database path if it differs from the default `expenses.db`:
-
-```bash
+# With custom database path
 go run ./cmd/adduser -user <username> -password <password> -db path/to/expenses.db
 ```
 
-## Testing
+---
+
+## 🧪 Testing
 
 ### Unit Tests
-
-Run unit tests for internal packages:
 
 ```bash
 go test ./internal/...
 ```
 
-### End-to-End (E2E) Tests
+### E2E Tests
 
-E2E tests use [Playwright for Go](https://github.com/playwright-community/playwright-go).
+```bash
+# Install Playwright browsers (first time)
+go run github.com/playwright-community/playwright-go/cmd/playwright install --with-deps
 
-1. Install Playwright browsers (first time only):
-   ```bash
-   go run github.com/playwright-community/playwright-go/cmd/playwright install --with-deps
-   ```
+# Run E2E tests
+go test -v ./e2e/...
+```
 
-2. Run the tests:
-   ```bash
-   go test -v ./e2e/...
-   ```
+---
 
-## Tech Stack
+## 🛠️ Tech Stack
 
-- **Backend**: Go (Golang)
-- **Database**: SQLite (via [modernc.org/sqlite](https://modernc.org/sqlite) - CGo-free)
-- **Frontend**: 
-  - HTML Templates (Go `html/template`)
-  - [HTMX](https://htmx.org) for interactivity
-  - Custom CSS for styling
-- **Testing**:
-  - [Playwright Go](https://github.com/playwright-community/playwright-go) for E2E testing
+<table>
+<tr>
+<td align="center" width="100">
+<img src="https://go.dev/blog/go-brand/Go-Logo/PNG/Go-Logo_Blue.png" width="48" height="48" alt="Go"/>
+<br/><sub><b>Go</b></sub>
+</td>
+<td align="center" width="100">
+<img src="https://htmx.org/img/htmx_logo.1.png" width="48" height="48" alt="HTMX"/>
+<br/><sub><b>HTMX</b></sub>
+</td>
+<td align="center" width="100">
+<img src="https://www.sqlite.org/images/sqlite370_banner.gif" width="48" height="48" alt="SQLite"/>
+<br/><sub><b>SQLite</b></sub>
+</td>
+<td align="center" width="100">
+<img src="https://playwright.dev/img/playwright-logo.svg" width="48" height="48" alt="Playwright"/>
+<br/><sub><b>Playwright</b></sub>
+</td>
+</tr>
+</table>
 
-## License
+- **Backend:** Go with `html/template`
+- **Database:** SQLite via [modernc.org/sqlite](https://modernc.org/sqlite) (CGo-free)
+- **Frontend:** HTMX + Custom CSS
+- **Testing:** Playwright for Go
 
-MIT
+---
+
+## 📄 License
+
+MIT License — feel free to use this for your own expense tracking!
+
+---
+
+<div align="center">
+
+**[⬆ Back to Top](#-expense-tracker)**
+
+</div>
