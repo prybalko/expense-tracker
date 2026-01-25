@@ -30,6 +30,7 @@
 
     function handleTouchStart(e) {
         if (isRefreshing) return;
+        if (document.body.classList.contains('modal-open')) return;
         if (!isAtTop()) return;
         
         startY = e.touches[0].clientY;

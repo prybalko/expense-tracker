@@ -499,6 +499,8 @@ body.modal-open {
   left: 0;
   right: 0;
   width: 100%;
+  touch-action: none;
+  overscroll-behavior: none;
 }
 
 .expense-dialog[open] {
