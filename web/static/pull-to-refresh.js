@@ -128,19 +128,12 @@
     }
 
     function doRefresh() {
-        // Use HTMX to reload current content, or fallback to page reload
-        const currentPath = window.location.pathname + window.location.search;
-        
-        htmx.ajax('GET', currentPath, {
-            target: '#content',
-            swap: 'innerHTML'
-        }).then(function() {
-            // Small delay to show the spinner completing
-            setTimeout(resetPullState, 200);
-        }).catch(function() {
-            // On error, just reset
-            setTimeout(resetPullState, 200);
-        });
+        // Full page reload to pick up any updated static files from cache
+        // The service worker uses stale-while-revalidate, so fresh files
+        // are fetched in background and available on next reload
+        setTimeout(function() {
+            location.reload();
+        }, 200);
     }
 
     // Only enable for standalone PWA mode (iOS home screen app)

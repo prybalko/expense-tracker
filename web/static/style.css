@@ -287,10 +287,6 @@ body {
   transition: background 0.15s, color 0.15s;
 }
 
-.backspace-btn:active {
-  background: var(--accent);
-}
-
 .remove-btn:hover {
   background: #ef4444;
   color: white;
@@ -387,8 +383,6 @@ body {
   color: var(--surface);
   font-size: 1.5rem;
 }
-
-.keypad .submit:active { background: var(--accent); }
 
 /* ========== Date Modal ========== */
 .date-modal-overlay {

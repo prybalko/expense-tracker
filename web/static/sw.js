@@ -51,12 +51,12 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     
-    // Static assets: cache-first (fastest)
+    // Static assets: stale-while-revalidate
+    // Serve cached version immediately, fetch fresh version in background
     if (url.pathname.startsWith('/static/')) {
         event.respondWith(
             caches.match(event.request).then((cached) => {
-                return cached || fetch(event.request).then((response) => {
-                    // Cache new static assets
+                const fetchPromise = fetch(event.request).then((response) => {
                     if (response.ok) {
                         const clone = response.clone();
                         caches.open(CACHE_NAME).then((cache) => {
@@ -65,6 +65,7 @@ self.addEventListener('fetch', (event) => {
                     }
                     return response;
                 });
+                return cached || fetchPromise;
             })
         );
         return;
