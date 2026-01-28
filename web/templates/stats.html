@@ -15,29 +15,29 @@
         <!-- Period Navigation -->
         <div class="period-selector">
             {{if eq .ViewMode "year"}}
-            <button class="period-nav" 
-                    hx-get="/statistics?view=year&year={{.PrevYear}}" 
-                    hx-target="#content" 
+            <button class="period-nav"
+                    hx-get="/statistics?view=year&year={{.PrevYear}}"
+                    hx-target="#content"
                     hx-push-url="true">‹</button>
             <h2 class="period-title">{{.Year}}</h2>
-            <button class="period-nav" 
+            <button class="period-nav"
                     {{if not .IsCurrentPeriod}}
-                    hx-get="/statistics?view=year&year={{.NextYear}}" 
-                    hx-target="#content" 
+                    hx-get="/statistics?view=year&year={{.NextYear}}"
+                    hx-target="#content"
                     hx-push-url="true"
                     {{else}}
                     disabled style="opacity: 0.3; cursor: not-allowed;"
                     {{end}}>›</button>
             {{else}}
-            <button class="period-nav" 
-                    hx-get="/statistics?view=month&year={{.PrevYear}}&month={{.PrevMonth}}" 
-                    hx-target="#content" 
+            <button class="period-nav"
+                    hx-get="/statistics?view=month&year={{.PrevYear}}&month={{.PrevMonth}}"
+                    hx-target="#content"
                     hx-push-url="true">‹</button>
             <h2 class="period-title">{{.MonthName}} {{.Year}}</h2>
-            <button class="period-nav" 
+            <button class="period-nav"
                     {{if not .IsCurrentPeriod}}
-                    hx-get="/statistics?view=month&year={{.NextYear}}&month={{.NextMonth}}" 
-                    hx-target="#content" 
+                    hx-get="/statistics?view=month&year={{.NextYear}}&month={{.NextMonth}}"
+                    hx-target="#content"
                     hx-push-url="true"
                     {{else}}
                     disabled style="opacity: 0.3; cursor: not-allowed;"
@@ -100,57 +100,35 @@
             <h3>Spending by Category</h3>
             <div class="category-list">
                 {{range .Categories}}
-                <div class="category-item">
-                    <div class="category-info">
-                        <div class="cat-icon" style="background-color: {{.CategoryStyle.Color}}">{{.CategoryStyle.Icon}}</div>
-                        <div class="category-details">
-                            <strong>{{.Category}}</strong>
-                            <small>{{.Count}} transaction{{if ne .Count 1}}s{{end}}</small>
+                <div class="category-group" data-category="{{.Category}}">
+                    <div class="category-item" onclick="toggleCategoryTransactions(this)">
+                        <div class="category-info">
+                            <div class="cat-icon" style="background-color: {{.CategoryStyle.Color}}">{{.CategoryStyle.Icon}}</div>
+                            <div class="category-details">
+                                <strong>{{.Category}}</strong>
+                                <small>{{.Count}} transaction{{if ne .Count 1}}s{{end}}</small>
+                            </div>
+                        </div>
+                        <div class="category-amount">
+                            <strong>
+                                €{{printf "%.2f" .Total}}
+                            </strong>
+                            <small class="percentage">{{printf "%.1f" .Percentage}}%</small>
                         </div>
                     </div>
-                    <div class="category-amount">
-                        <strong>€{{printf "%.2f" .Total}}</strong>
-                        <small class="percentage">{{printf "%.1f" .Percentage}}%</small>
+                    <div class="category-bar">
+                        <div class="category-bar-fill" style="width: {{printf "%.1f" .Percentage}}%; background-color: {{.CategoryStyle.Color}}"></div>
                     </div>
-                </div>
-                <div class="category-bar">
-                    <div class="category-bar-fill" style="width: {{printf "%.1f" .Percentage}}%; background-color: {{.CategoryStyle.Color}}"></div>
+                    <div class="category-transactions"></div>
                 </div>
                 {{end}}
             </div>
         </section>
         {{end}}
 
-        <!-- Expenses List -->
-        {{if .Expenses}}
-        <section class="stats-expenses">
-            <h3>All Transactions</h3>
-            <div class="expense-list">
-                {{range .Expenses}}
-                <article class="expense-item" 
-                         data-id="{{.ID}}"
-                         data-amount="{{.Amount}}"
-                         data-description="{{.Description}}"
-                         data-category="{{.Category}}"
-                         data-datetime="{{.DateTime}}"
-                         onclick="openEditModal(this.dataset.id, this.dataset.amount, this.dataset.description, this.dataset.category, this.dataset.datetime)">
-                    <div class="expense-info">
-                        <div class="cat-icon" style="background-color: {{.CategoryStyle.Color}}">{{.CategoryStyle.Icon}}</div>
-                        <div class="expense-details">
-                            <strong>{{.Description}}</strong>
-                            <small>{{.Time}}</small>
-                        </div>
-                    </div>
-                    <span class="expense-amount{{if .IsIncome}} income{{end}}">
-                        {{if .IsIncome}}+{{else}}-{{end}}€{{printf "%.2f" .Amount}}
-                    </span>
-                </article>
-                {{end}}
-            </div>
-        </section>
-        {{else}}
+        {{if not .Expenses}}
         <section class="empty-state">
-            <p>No expenses recorded for this month</p>
+            <p>No expenses recorded for this period</p>
         </section>
         {{end}}
     </section>
@@ -163,6 +141,14 @@
 </div>
 
 <script>
+// Transaction data stored as JSON (more efficient than hidden DOM)
+// Using window. to allow re-declaration when HTMX swaps content
+window.transactionData = [
+{{- range .Expenses}}
+    {id:"{{.ID}}",amount:{{.Amount}},description:{{js .Description}},category:{{js .Category}},datetime:"{{.DateTime}}",time:"{{.Time}}",isIncome:{{.IsIncome}}},
+{{- end}}
+];
+
 function changeViewMode(view, year, month) {
     let url = '/statistics?view=' + view;
     if (view === 'year') {
@@ -173,23 +159,79 @@ function changeViewMode(view, year, month) {
     htmx.ajax('GET', url, {target: '#content', swap: 'innerHTML', push: true});
 }
 
+// Render a transaction item from data
+function renderTransaction(t) {
+    const amountClass = t.isIncome ? 'expense-amount income' : 'expense-amount';
+    const sign = t.isIncome ? '+' : '-';
+    // Escape HTML entities for safe rendering
+    const escHtml = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    // Escape for use in HTML attributes
+    const escAttr = s => s.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+    return `<article class="expense-item" data-id="${t.id}" data-amount="${t.amount}" data-description="${escAttr(t.description)}" data-category="${escAttr(t.category)}" data-datetime="${t.datetime}" onclick="openEditModal(this.dataset.id, this.dataset.amount, this.dataset.description, this.dataset.category, this.dataset.datetime)">
+        <div class="expense-info">
+            <div class="expense-details">
+                <strong>${escHtml(t.description)}</strong>
+                <small>${t.time}</small>
+            </div>
+        </div>
+        <span class="${amountClass}">${sign}€${t.amount.toFixed(2)}</span>
+    </article>`;
+}
+
+// Toggle category transactions visibility
+function toggleCategoryTransactions(categoryItem) {
+    const group = categoryItem.closest('.category-group');
+    const category = group.dataset.category;
+    const container = group.querySelector('.category-transactions');
+    const isExpanded = group.classList.contains('expanded');
+
+    if (isExpanded) {
+        // Collapse
+        group.classList.remove('expanded');
+        container.style.maxHeight = '0';
+        setTimeout(() => { container.innerHTML = ''; }, 300);
+    } else {
+        // Collapse any other expanded categories first
+        document.querySelectorAll('.category-group.expanded').forEach(g => {
+            g.classList.remove('expanded');
+            const c = g.querySelector('.category-transactions');
+            c.style.maxHeight = '0';
+            setTimeout(() => { c.innerHTML = ''; }, 300);
+        });
+
+        // Filter transactions by category from JSON data
+        const matching = window.transactionData.filter(t => t.category === category);
+
+        if (matching.length === 0) {
+            container.innerHTML = '<div class="no-transactions">No transactions</div>';
+        } else {
+            // Render transactions from data
+            container.innerHTML = '<div class="expense-list">' + matching.map(renderTransaction).join('') + '</div>';
+        }
+
+        // Expand with animation
+        group.classList.add('expanded');
+        container.style.maxHeight = container.scrollHeight + 'px';
+    }
+}
+
 // Initialize chart bar heights
 (function() {
     const container = document.querySelector('.chart-container');
     if (!container) return;
-    
+
     const maxValue = parseFloat(container.dataset.maxValue) || 0;
     const average = parseFloat(container.dataset.average) || 0;
-    
+
     if (maxValue <= 0) return;
-    
+
     // Set bar heights
     document.querySelectorAll('.chart-bar').forEach(bar => {
         const value = parseFloat(bar.dataset.value) || 0;
         const heightPercent = (value / maxValue) * 100;
         bar.style.height = heightPercent + '%';
     });
-    
+
     // Set average line position
     if (average > 0) {
         const avgLine = document.querySelector('.average-line');
