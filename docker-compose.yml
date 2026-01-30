@@ -4,7 +4,9 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ./expenses.db:/app/expenses.db
+      - ./data:/app/data
     ports:
       - "8080:8080"
+    environment:
+      - DB_PATH=/app/data/expenses.db
     restart: unless-stopped
