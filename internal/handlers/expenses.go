@@ -8,7 +8,9 @@ import (
 	"strconv"
 )
 
-// ListExpenses renders the list of expenses.
+const pageSize = 50
+
+// ListExpenses renders the list of expenses with infinite scroll support.
 func (h *Handlers) ListExpenses(w http.ResponseWriter, r *http.Request) {
 	user, ok := r.Context().Value(UserContextKey).(*models.User)
 	if !ok {
@@ -16,16 +18,30 @@ func (h *Handlers) ListExpenses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expenses, err := h.db.ListExpenses()
+	// Parse offset parameter for pagination
+	offset := 0
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		if parsed, err := strconv.Atoi(offsetStr); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	// Fetch one extra to check if there are more items
+	expenses, err := h.db.ListExpenses(pageSize+1, offset)
 	if err != nil {
 		log.Printf("ListExpenses error: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	groupsMap := make(map[string]*ExpenseGroup)
-	var totalSpent float64
+	// Check if there are more items
+	hasMore := len(expenses) > pageSize
+	if hasMore {
+		expenses = expenses[:pageSize] // Trim to actual page size
+	}
 
+	// Group expenses by date
+	groupsMap := make(map[string]*ExpenseGroup)
 	for _, e := range expenses {
 		dateStr := e.Date.Format("2006-01-02")
 		if _, ok := groupsMap[dateStr]; !ok {
@@ -33,7 +49,6 @@ func (h *Handlers) ListExpenses(w http.ResponseWriter, r *http.Request) {
 		}
 		group := groupsMap[dateStr]
 		group.Total += e.Amount
-		totalSpent += e.Amount
 
 		// Check if this expense was created by a different user
 		isOtherUser := e.UserID != nil && *e.UserID != user.ID
@@ -56,7 +71,33 @@ func (h *Handlers) ListExpenses(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].Date > groups[j].Date })
 
-	h.render(w, r, "list.html", ListViewModel{Total: totalSpent, Groups: groups})
+	// Calculate next offset
+	nextOffset := 0
+	if hasMore {
+		nextOffset = offset + pageSize
+	}
+
+	viewModel := ListViewModel{
+		Groups:     groups,
+		NextOffset: nextOffset,
+		HasMore:    hasMore,
+	}
+
+	// For HTMX requests loading more items, return only the fragment
+	if offset > 0 && r.Header.Get("HX-Request") == "true" {
+		h.render(w, r, "expense_groups.html", viewModel)
+		return
+	}
+
+	// For full page load, get the current month total separately
+	totalSpent, err := h.db.GetCurrentMonthTotal()
+	if err != nil {
+		log.Printf("GetCurrentMonthTotal error: %v", err)
+		// Continue with 0 total rather than failing
+	}
+	viewModel.Total = totalSpent
+
+	h.render(w, r, "list.html", viewModel)
 }
 
 // CreateExpenseForm renders the form to create a new expense.

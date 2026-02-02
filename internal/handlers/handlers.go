@@ -80,8 +80,10 @@ type ExpenseGroup struct {
 
 // ListViewModel is the data passed to the list view template.
 type ListViewModel struct {
-	Total  float64
-	Groups []ExpenseGroup
+	Total      float64
+	Groups     []ExpenseGroup
+	NextOffset int  // Offset for loading more items (0 means no more)
+	HasMore    bool // Whether there are more items to load
 }
 
 // FormViewModel is the data passed to the create/edit form template.

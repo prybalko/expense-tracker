@@ -1,0 +1,39 @@
+{{define "expense_groups"}}
+{{range .Groups}}
+<div class="group">
+    <div class="group-header">
+        <span>{{.Title}}</span>
+        <span>-€{{printf "%.2f" .Total}}</span>
+    </div>
+    {{range .Items}}
+    <article class="expense-item" 
+             data-id="{{.ID}}"
+             data-amount="{{.Amount}}"
+             data-description="{{.Description}}"
+             data-category="{{.Category}}"
+             data-datetime="{{.DateTime}}"
+             {{if .IsOtherUser}}style="background-color: floralwhite;"{{end}}
+             onclick="openEditModal(this.dataset.id, this.dataset.amount, this.dataset.description, this.dataset.category, this.dataset.datetime)">
+        <div class="expense-info">
+            <div class="cat-icon" style="background-color: {{.CategoryStyle.Color}}">{{.CategoryStyle.Icon}}</div>
+            <div class="expense-details">
+                <strong>{{.Description}}</strong>
+                <small>{{.Time}}</small>
+            </div>
+        </div>
+        <span class="expense-amount{{if .IsIncome}} income{{end}}">
+            {{if .IsIncome}}+{{else}}-{{end}}€{{printf "%.2f" .Amount}}
+        </span>
+    </article>
+    {{end}}
+</div>
+{{end}}
+{{if .HasMore}}
+<div class="load-more-sentinel"
+     hx-get="/expenses?offset={{.NextOffset}}"
+     hx-trigger="intersect once"
+     hx-swap="outerHTML">
+    <div class="loading-spinner"></div>
+</div>
+{{end}}
+{{end}}

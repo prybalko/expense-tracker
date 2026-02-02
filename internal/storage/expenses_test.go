@@ -38,7 +38,7 @@ func (s *ExpenseTestSuite) TestDeleteExpense() {
 	s.Require().NoError(err)
 
 	// Get the expense to find its ID
-	expenses, err := s.db.ListExpenses()
+	expenses, err := s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Require().Len(expenses, 1)
 	expenseID := expenses[0].ID
@@ -48,7 +48,7 @@ func (s *ExpenseTestSuite) TestDeleteExpense() {
 	s.Require().NoError(err)
 
 	// Verify it's gone
-	expenses, err = s.db.ListExpenses()
+	expenses, err = s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Empty(expenses, "expected no expenses after deletion")
 }
@@ -71,7 +71,7 @@ func (s *ExpenseTestSuite) TestDeleteExpense_OnlyDeletesTarget() {
 	s.Require().NoError(err)
 
 	// Get all expenses
-	expenses, err := s.db.ListExpenses()
+	expenses, err := s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Require().Len(expenses, 3)
 
@@ -89,7 +89,7 @@ func (s *ExpenseTestSuite) TestDeleteExpense_OnlyDeletesTarget() {
 	s.Require().NoError(err)
 
 	// Verify only 2 remain and Lunch is gone
-	expenses, err = s.db.ListExpenses()
+	expenses, err = s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Len(expenses, 2, "expected 2 expenses after deletion")
 
@@ -118,7 +118,7 @@ func (s *ExpenseTestSuite) TestListExpenses() {
 		s.Require().NoError(err, "failed to create expense: %s", exp.description)
 	}
 
-	result, err := s.db.ListExpenses()
+	result, err := s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Len(result, 3, "expected 3 expenses")
 
@@ -153,24 +153,42 @@ func (s *ExpenseTestSuite) TestListExpensesCurrentMonth() {
 		s.Require().NoError(err, "failed to create expense: %s", exp.description)
 	}
 
-	// List expenses should only return current month
-	expenses, err := s.db.ListExpenses()
+	// List expenses should return all expenses (no longer filtered by month)
+	expenses, err := s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
-	s.Len(expenses, 2, "expected only current month expenses")
+	s.Len(expenses, 4, "expected all expenses")
 
-	// Verify all returned expenses are from current month
-	for _, exp := range expenses {
-		s.Equal(now.Month(), exp.Date.Month(), "expense month mismatch")
-		s.Equal(now.Year(), exp.Date.Year(), "expense year mismatch")
-	}
-
-	// Verify the expenses are the correct ones (ordered by date DESC)
-	if s.Len(expenses, 2) {
+	// Verify the expenses are ordered by date DESC
+	if s.Len(expenses, 4) {
 		s.Equal("Current Month 2", expenses[0].Description)
 		s.InDelta(150.00, expenses[0].Amount, 0.001)
 		s.Equal("Current Month 1", expenses[1].Description)
 		s.InDelta(100.00, expenses[1].Amount, 0.001)
 	}
+}
+
+func (s *ExpenseTestSuite) TestListExpensesPagination() {
+	// Create 5 expenses
+	baseTime := time.Now()
+	for i := 1; i <= 5; i++ {
+		err := s.db.CreateExpense(float64(i*10), "Expense "+string(rune('0'+i)), "food", baseTime.Add(time.Duration(i)*time.Minute), 1)
+		s.Require().NoError(err)
+	}
+
+	// Test limit
+	expenses, err := s.db.ListExpenses(2, 0)
+	s.Require().NoError(err)
+	s.Len(expenses, 2, "expected 2 expenses with limit=2")
+
+	// Test offset
+	expenses, err = s.db.ListExpenses(2, 2)
+	s.Require().NoError(err)
+	s.Len(expenses, 2, "expected 2 expenses with limit=2, offset=2")
+
+	// Test offset beyond data
+	expenses, err = s.db.ListExpenses(10, 10)
+	s.Require().NoError(err)
+	s.Empty(expenses, "expected 0 expenses with offset beyond data")
 }
 
 func (s *ExpenseTestSuite) TestGetExpensesByMonth() {

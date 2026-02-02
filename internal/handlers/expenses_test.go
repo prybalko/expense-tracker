@@ -161,7 +161,7 @@ func (s *ExpenseHandlerTestSuite) TestCreateExpense() {
 	s.Equal(expectedLoc, resp.Header.Get("HX-Location"))
 
 	// Verify DB insertion
-	expenses, err := s.db.ListExpenses()
+	expenses, err := s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Require().Len(expenses, 1, "expected exactly 1 expense")
 	s.Equal("Lunch Test", expenses[0].Description)
@@ -187,7 +187,7 @@ func (s *ExpenseHandlerTestSuite) TestCreateExpense_LegacyFormat() {
 	resp := w.Result()
 	s.Equal(http.StatusOK, resp.StatusCode)
 
-	expenses, err := s.db.ListExpenses()
+	expenses, err := s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Require().Len(expenses, 1)
 	s.Equal("Fallback Test", expenses[0].Description)
@@ -388,7 +388,7 @@ func (s *ExpenseHandlerTestSuite) TestDeleteExpense() {
 	s.Require().NoError(err)
 
 	// Get the expense ID
-	expenses, err := s.db.ListExpenses()
+	expenses, err := s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Require().Len(expenses, 1)
 	expenseID := expenses[0].ID
@@ -412,7 +412,7 @@ func (s *ExpenseHandlerTestSuite) TestDeleteExpense() {
 	s.Equal(expectedLoc, resp.Header.Get("HX-Location"))
 
 	// Verify expense is deleted
-	expenses, err = s.db.ListExpenses()
+	expenses, err = s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Empty(expenses, "expected expense to be deleted")
 }
@@ -449,7 +449,7 @@ func (s *ExpenseHandlerTestSuite) TestIsOtherUserLogic() {
 	s.Require().NoError(err)
 
 	// Get all expenses
-	expenses, err := s.db.ListExpenses()
+	expenses, err := s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Require().Len(expenses, 2)
 

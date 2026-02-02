@@ -55,7 +55,34 @@ func parseForm(r *http.Request) (amount float64, desc, category string, date tim
 }
 
 func (h *Handlers) render(w http.ResponseWriter, r *http.Request, viewName string, data any) {
-	tmpl, err := template.ParseFiles(filepath.Join(h.templateDir, "base.html"), filepath.Join(h.templateDir, viewName))
+	// For fragment templates (partials), render them directly
+	if viewName == "expense_groups.html" {
+		filePath := filepath.Join(h.templateDir, viewName)
+		tmpl, err := template.ParseFiles(filePath)
+		if err != nil {
+			log.Printf("Template parse error for %s: %v", filePath, err)
+			http.Error(w, "Template error", http.StatusInternalServerError)
+			return
+		}
+		if err := tmpl.ExecuteTemplate(w, "expense_groups", data); err != nil {
+			log.Printf("Template execution error for %s: %v", viewName, err)
+			http.Error(w, "Template error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Build list of template files to parse
+	files := []string{
+		filepath.Join(h.templateDir, "base.html"),
+		filepath.Join(h.templateDir, viewName),
+	}
+
+	// Include expense_groups partial for list view
+	if viewName == "list.html" {
+		files = append(files, filepath.Join(h.templateDir, "expense_groups.html"))
+	}
+
+	tmpl, err := template.ParseFiles(files...)
 	if err != nil {
 		log.Printf("Template error: %v", err)
 		http.Error(w, "Template error", http.StatusInternalServerError)

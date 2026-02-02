@@ -47,15 +47,12 @@ func (db *DB) DeleteExpense(id int64) error {
 	return err
 }
 
-// ListExpenses retrieves expenses for the current month from the database, ordered by date descending.
-func (db *DB) ListExpenses() ([]models.Expense, error) {
-	// Calculate start of current month
-	now := time.Now()
-	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-
+// ListExpenses retrieves expenses from the database, ordered by date descending.
+// Supports pagination with limit and offset parameters.
+func (db *DB) ListExpenses(limit, offset int) ([]models.Expense, error) {
 	rows, err := db.conn.Query(
-		"SELECT id, amount, description, category, date, user_id FROM expenses WHERE date >= ? ORDER BY date DESC",
-		startOfMonth,
+		"SELECT id, amount, description, category, date, user_id FROM expenses ORDER BY date DESC LIMIT ? OFFSET ?",
+		limit, offset,
 	)
 	if err != nil {
 		return nil, err
@@ -72,6 +69,20 @@ func (db *DB) ListExpenses() ([]models.Expense, error) {
 	}
 
 	return expenses, rows.Err()
+}
+
+// GetCurrentMonthTotal returns the total spent in the current month.
+func (db *DB) GetCurrentMonthTotal() (float64, error) {
+	now := time.Now()
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+
+	var total float64
+	err := db.conn.QueryRow(
+		"SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date >= ?",
+		startOfMonth,
+	).Scan(&total)
+
+	return total, err
 }
 
 // ClearExpenses deletes all expenses from the database (used for testing).
