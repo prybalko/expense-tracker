@@ -106,12 +106,31 @@ func (h *Handlers) buildMonthView(year, month int, now time.Time) StatsViewModel
 		log.Printf("GetDailyTotalsForMonth error: %v", err)
 	}
 
-	// Calculate total
+	// Check if this is the current month
+	isCurrentPeriod := year == now.Year() && month == int(now.Month())
+
+	currentStart := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	prevStart := currentStart.AddDate(0, -1, 0)
+
+	// Calculate total (MTD for the current month)
 	total, _ := h.db.GetTotalForPeriod(year, month)
 
-	// Get previous month total for percentage change
-	prevDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -1, 0)
-	prevTotal, _ := h.db.GetTotalForPeriod(prevDate.Year(), int(prevDate.Month()))
+	// For a fair +/- comparison, align the current and previous windows:
+	// - completed month: compare full month vs full previous month
+	// - current month: compare MTD vs same day-range of previous month,
+	//   truncating both sides to the shorter of the two when necessary
+	var prevTotal, compareTotal float64
+	if isCurrentPeriod {
+		nowUTC := now.UTC()
+		daysElapsed := nowUTC.Day()
+		daysInPrevMonth := int(currentStart.Sub(prevStart).Hours() / 24)
+		daysCmp := min(daysElapsed, daysInPrevMonth)
+		compareTotal, _ = h.db.GetTotalForRange(currentStart, currentStart.AddDate(0, 0, daysCmp))
+		prevTotal, _ = h.db.GetTotalForRange(prevStart, prevStart.AddDate(0, 0, daysCmp))
+	} else {
+		compareTotal = total
+		prevTotal, _ = h.db.GetTotalForPeriod(prevStart.Year(), int(prevStart.Month()))
+	}
 
 	// Calculate percentage change
 	percentageChange := 0.0
@@ -119,16 +138,21 @@ func (h *Handlers) buildMonthView(year, month int, now time.Time) StatsViewModel
 	isIncrease := false
 	if prevTotal > 0 {
 		hasChange = true
-		percentageChange = ((total - prevTotal) / prevTotal) * 100
+		percentageChange = ((compareTotal - prevTotal) / prevTotal) * 100
 		isIncrease = percentageChange > 0
 		percentageChange = math.Abs(percentageChange)
 	}
 
-	// Calculate average spending per day
+	// Calculate average spending per day: elapsed days for the current month,
+	// full month length for completed months
 	daysInMonth := time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	avgDivisor := daysInMonth
+	if isCurrentPeriod {
+		avgDivisor = now.UTC().Day()
+	}
 	averageSpending := 0.0
-	if daysInMonth > 0 {
-		averageSpending = total / float64(daysInMonth)
+	if avgDivisor > 0 {
+		averageSpending = total / float64(avgDivisor)
 	}
 
 	// Build chart data
@@ -188,11 +212,7 @@ func (h *Handlers) buildMonthView(year, month int, now time.Time) StatsViewModel
 		})
 	}
 
-	// Calculate previous and next month
-	nextDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0)
-
-	// Check if this is the current month
-	isCurrentPeriod := year == now.Year() && month == int(now.Month())
+	nextDate := currentStart.AddDate(0, 1, 0)
 
 	monthName := time.Month(month).String()
 
@@ -211,8 +231,8 @@ func (h *Handlers) buildMonthView(year, month int, now time.Time) StatsViewModel
 		Expenses:         expenseItems,
 		ChartData:        chartData,
 		MaxChartValue:    maxValue,
-		PrevYear:         prevDate.Year(),
-		PrevMonth:        int(prevDate.Month()),
+		PrevYear:         prevStart.Year(),
+		PrevMonth:        int(prevStart.Month()),
 		NextYear:         nextDate.Year(),
 		NextMonth:        int(nextDate.Month()),
 		IsCurrentPeriod:  isCurrentPeriod,
@@ -241,11 +261,31 @@ func (h *Handlers) buildYearView(year int, now time.Time) StatsViewModel {
 		log.Printf("GetMonthlyTotalsForYear error: %v", err)
 	}
 
-	// Calculate total
+	// Check if this is the current year
+	isCurrentPeriod := year == now.Year()
+
+	currentYearStart := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
+	prevYearStart := time.Date(year-1, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Calculate total (YTD for the current year)
 	total, _ := h.db.GetTotalForPeriod(year, 0)
 
-	// Get previous year total for percentage change
-	prevTotal, _ := h.db.GetTotalForPeriod(year-1, 0)
+	// For a fair +/- comparison, align the current and previous windows:
+	// - completed year: compare full year vs full previous year
+	// - current year: compare YTD vs same day-range of previous year,
+	//   truncating to the shorter of the two when necessary (leap years)
+	var prevTotal, compareTotal float64
+	if isCurrentPeriod {
+		nowUTC := now.UTC()
+		daysElapsed := nowUTC.YearDay()
+		daysInPrevYear := int(currentYearStart.Sub(prevYearStart).Hours() / 24)
+		daysCmp := min(daysElapsed, daysInPrevYear)
+		compareTotal, _ = h.db.GetTotalForRange(currentYearStart, currentYearStart.AddDate(0, 0, daysCmp))
+		prevTotal, _ = h.db.GetTotalForRange(prevYearStart, prevYearStart.AddDate(0, 0, daysCmp))
+	} else {
+		compareTotal = total
+		prevTotal, _ = h.db.GetTotalForPeriod(year-1, 0)
+	}
 
 	// Calculate percentage change
 	percentageChange := 0.0
@@ -253,13 +293,21 @@ func (h *Handlers) buildYearView(year int, now time.Time) StatsViewModel {
 	isIncrease := false
 	if prevTotal > 0 {
 		hasChange = true
-		percentageChange = ((total - prevTotal) / prevTotal) * 100
+		percentageChange = ((compareTotal - prevTotal) / prevTotal) * 100
 		isIncrease = percentageChange > 0
 		percentageChange = math.Abs(percentageChange)
 	}
 
-	// Calculate average spending per month
-	averageSpending := total / 12.0
+	// Calculate average spending per month: elapsed months for the current year,
+	// 12 for completed years
+	monthsDivisor := 12
+	if isCurrentPeriod {
+		monthsDivisor = int(now.UTC().Month())
+	}
+	averageSpending := 0.0
+	if monthsDivisor > 0 {
+		averageSpending = total / float64(monthsDivisor)
+	}
 
 	// Build chart data
 	monthNames := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
@@ -315,9 +363,6 @@ func (h *Handlers) buildYearView(year int, now time.Time) StatsViewModel {
 			IsIncome:      strings.Contains(e.Description, "[Income]"),
 		})
 	}
-
-	// Check if this is the current year
-	isCurrentPeriod := year == now.Year()
 
 	return StatsViewModel{
 		ViewMode:         "year",

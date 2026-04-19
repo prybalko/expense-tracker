@@ -359,6 +359,175 @@ func (s *ExpenseHandlerTestSuite) TestStatistics_InvalidMonth() {
 	s.Equal(http.StatusOK, resp.StatusCode)
 }
 
+func (s *ExpenseHandlerTestSuite) TestBuildMonthView_CurrentMonth_MTDComparison() {
+	h := NewHandlers(s.db, s.templateDir, false)
+
+	// Pretend "now" is April 19, 2026. 19 days elapsed in April.
+	now := time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
+
+	// Previous month (March 2026): $240 within the first 19 days, $100 after.
+	// Only the first $240 should count against the comparison window.
+	marchExpenses := []struct {
+		amount float64
+		date   time.Time
+	}{
+		{80.00, time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)},
+		{80.00, time.Date(2026, 3, 10, 10, 0, 0, 0, time.UTC)},
+		{80.00, time.Date(2026, 3, 15, 10, 0, 0, 0, time.UTC)},
+		{100.00, time.Date(2026, 3, 25, 10, 0, 0, 0, time.UTC)},
+	}
+	for _, exp := range marchExpenses {
+		s.Require().NoError(s.db.CreateExpense(exp.amount, "Test", "other", exp.date, 1))
+	}
+
+	// Current month (April 2026, MTD through Apr 19): $200 total.
+	aprilExpenses := []struct {
+		amount float64
+		date   time.Time
+	}{
+		{100.00, time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)},
+		{50.00, time.Date(2026, 4, 10, 10, 0, 0, 0, time.UTC)},
+		{50.00, time.Date(2026, 4, 15, 10, 0, 0, 0, time.UTC)},
+	}
+	for _, exp := range aprilExpenses {
+		s.Require().NoError(s.db.CreateExpense(exp.amount, "Test", "other", exp.date, 1))
+	}
+
+	vm := h.buildMonthView(2026, 4, now)
+
+	s.True(vm.IsCurrentPeriod, "April 2026 should be the current period")
+	s.InDelta(200.00, vm.Total, 0.001, "Total reflects MTD (Apr 1-19)")
+	s.True(vm.HasChange)
+	s.False(vm.IsIncrease, "MTD 200 < previous MTD 240, so it's a decrease")
+
+	// (200 - 240) / 240 * 100 = -16.666...%, abs = 16.666...
+	expectedPct := (240.0 - 200.0) / 240.0 * 100.0
+	s.InDelta(expectedPct, vm.PercentageChange, 0.01, "+/- compares matching 19-day windows")
+
+	// Average uses elapsed days (19), not the 30 days in April.
+	s.InDelta(200.0/19.0, vm.AverageSpending, 0.01, "avg uses elapsed days for current month")
+}
+
+func (s *ExpenseHandlerTestSuite) TestBuildMonthView_CurrentMonth_CapsAtPrevMonthLength() {
+	// Today is March 31 but February only has 28 days. Both windows should be
+	// truncated to 28 days so the comparison stays apples-to-apples.
+	h := NewHandlers(s.db, s.templateDir, false)
+	now := time.Date(2026, 3, 31, 12, 0, 0, 0, time.UTC)
+
+	// Feb 1-28 (28 days, $100 each day-range we care about).
+	s.Require().NoError(s.db.CreateExpense(100.00, "Feb", "other",
+		time.Date(2026, 2, 27, 10, 0, 0, 0, time.UTC), 1))
+
+	// March: $50 within first 28 days, $500 on Mar 30 (excluded from comparison).
+	s.Require().NoError(s.db.CreateExpense(50.00, "Mar early", "other",
+		time.Date(2026, 3, 15, 10, 0, 0, 0, time.UTC), 1))
+	s.Require().NoError(s.db.CreateExpense(500.00, "Mar late", "other",
+		time.Date(2026, 3, 30, 10, 0, 0, 0, time.UTC), 1))
+
+	vm := h.buildMonthView(2026, 3, now)
+
+	s.True(vm.IsCurrentPeriod)
+	s.InDelta(550.00, vm.Total, 0.001, "Total is MTD (all March)")
+	s.True(vm.HasChange)
+	s.False(vm.IsIncrease, "first 28 days of March ($50) < first 28 days of Feb ($100)")
+	s.InDelta(50.0, vm.PercentageChange, 0.01, "both windows capped to 28 days")
+	s.InDelta(550.0/31.0, vm.AverageSpending, 0.01, "avg uses 31 elapsed days")
+}
+
+func (s *ExpenseHandlerTestSuite) TestBuildMonthView_CompletedMonth_FullComparison() {
+	h := NewHandlers(s.db, s.templateDir, false)
+	now := time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
+
+	// Full March ($300) vs full February ($200).
+	marchDates := []time.Time{
+		time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
+		time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC),
+		time.Date(2026, 3, 30, 10, 0, 0, 0, time.UTC),
+	}
+	for _, d := range marchDates {
+		s.Require().NoError(s.db.CreateExpense(100.00, "Mar", "other", d, 1))
+	}
+	febDates := []time.Time{
+		time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC),
+		time.Date(2026, 2, 10, 10, 0, 0, 0, time.UTC),
+	}
+	for _, d := range febDates {
+		s.Require().NoError(s.db.CreateExpense(100.00, "Feb", "other", d, 1))
+	}
+
+	vm := h.buildMonthView(2026, 3, now)
+
+	s.False(vm.IsCurrentPeriod, "March 2026 is a past period when now is April")
+	s.InDelta(300.00, vm.Total, 0.001)
+	s.True(vm.HasChange)
+	s.True(vm.IsIncrease, "$300 Mar > $200 Feb")
+	s.InDelta(50.0, vm.PercentageChange, 0.001, "(300-200)/200 = 50%")
+	s.InDelta(300.0/31.0, vm.AverageSpending, 0.01, "past month uses full month length (31 days)")
+}
+
+func (s *ExpenseHandlerTestSuite) TestBuildYearView_CurrentYear_YTDComparison() {
+	h := NewHandlers(s.db, s.templateDir, false)
+
+	// April 19, 2026 is YearDay 109. Compare [Jan 1, Apr 20) each year.
+	now := time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
+
+	// 2025: $300 in Jan-Mar (inside YTD window), $500 in Dec (outside).
+	prevExpenses := []struct {
+		amount float64
+		date   time.Time
+	}{
+		{100.00, time.Date(2025, 1, 15, 10, 0, 0, 0, time.UTC)},
+		{200.00, time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)},
+		{500.00, time.Date(2025, 12, 31, 10, 0, 0, 0, time.UTC)},
+	}
+	for _, exp := range prevExpenses {
+		s.Require().NoError(s.db.CreateExpense(exp.amount, "Test", "other", exp.date, 1))
+	}
+
+	// 2026: $150 YTD
+	currExpenses := []struct {
+		amount float64
+		date   time.Time
+	}{
+		{50.00, time.Date(2026, 2, 14, 10, 0, 0, 0, time.UTC)},
+		{100.00, time.Date(2026, 4, 10, 10, 0, 0, 0, time.UTC)},
+	}
+	for _, exp := range currExpenses {
+		s.Require().NoError(s.db.CreateExpense(exp.amount, "Test", "other", exp.date, 1))
+	}
+
+	vm := h.buildYearView(2026, now)
+
+	s.True(vm.IsCurrentPeriod)
+	s.InDelta(150.00, vm.Total, 0.001, "Total is YTD")
+	s.True(vm.HasChange)
+	s.False(vm.IsIncrease, "YTD 150 < prev YTD 300")
+	s.InDelta(50.0, vm.PercentageChange, 0.01, "(150-300)/300 = -50%")
+
+	// April = month 4 elapsed (SPENT/MTH uses elapsed months for current year).
+	s.InDelta(150.0/4.0, vm.AverageSpending, 0.01)
+}
+
+func (s *ExpenseHandlerTestSuite) TestBuildYearView_CompletedYear_FullComparison() {
+	h := NewHandlers(s.db, s.templateDir, false)
+	now := time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
+
+	// 2024 full year: $1200. 2023 full year: $1500.
+	s.Require().NoError(s.db.CreateExpense(1200.00, "2024", "other",
+		time.Date(2024, 6, 15, 10, 0, 0, 0, time.UTC), 1))
+	s.Require().NoError(s.db.CreateExpense(1500.00, "2023", "other",
+		time.Date(2023, 6, 15, 10, 0, 0, 0, time.UTC), 1))
+
+	vm := h.buildYearView(2024, now)
+
+	s.False(vm.IsCurrentPeriod)
+	s.InDelta(1200.00, vm.Total, 0.001)
+	s.True(vm.HasChange)
+	s.False(vm.IsIncrease)
+	s.InDelta(20.0, vm.PercentageChange, 0.001, "(1200-1500)/1500 = -20%")
+	s.InDelta(1200.0/12.0, vm.AverageSpending, 0.001, "completed year uses 12 months")
+}
+
 func (s *ExpenseHandlerTestSuite) TestStatistics_TransactionCount() {
 	h := NewHandlers(s.db, s.templateDir, false)
 

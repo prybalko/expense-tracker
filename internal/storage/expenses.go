@@ -228,6 +228,16 @@ func (db *DB) GetDailyTotalsForMonth(year, month int) ([]DailyTotal, error) {
 	return totals, rows.Err()
 }
 
+// GetTotalForRange returns the sum of expense amounts in [start, end).
+func (db *DB) GetTotalForRange(start, end time.Time) (float64, error) {
+	var total float64
+	err := db.conn.QueryRow(
+		`SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date >= ? AND date < ?`,
+		start, end,
+	).Scan(&total)
+	return total, err
+}
+
 // GetTotalForPeriod retrieves the total spending for a period.
 // If month is 0, it returns the total for the entire year.
 // Otherwise, it returns the total for the specific month.
@@ -235,22 +245,14 @@ func (db *DB) GetTotalForPeriod(year, month int) (float64, error) {
 	var startDate, endDate time.Time
 
 	if month == 0 {
-		// Year total
 		startDate = time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 		endDate = startDate.AddDate(1, 0, 0)
 	} else {
-		// Month total
 		startDate = time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 		endDate = startDate.AddDate(0, 1, 0)
 	}
 
-	var total float64
-	err := db.conn.QueryRow(
-		`SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date >= ? AND date < ?`,
-		startDate, endDate,
-	).Scan(&total)
-
-	return total, err
+	return db.GetTotalForRange(startDate, endDate)
 }
 
 // GetExpensesByYear retrieves all expenses for a specific year.

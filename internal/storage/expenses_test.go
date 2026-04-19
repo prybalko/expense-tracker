@@ -378,6 +378,47 @@ func (s *ExpenseTestSuite) TestGetExpensesByMonth_EdgeCases() {
 	}
 }
 
+func (s *ExpenseTestSuite) TestGetTotalForRange() {
+	testExpenses := []struct {
+		amount float64
+		date   time.Time
+	}{
+		{50.00, time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC)},
+		{100.00, time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)},
+		{200.00, time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)},
+		{400.00, time.Date(2026, 3, 31, 23, 59, 59, 0, time.UTC)},
+		{800.00, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)},
+	}
+	for _, exp := range testExpenses {
+		err := s.db.CreateExpense(exp.amount, "Test", "other", exp.date, 1)
+		s.Require().NoError(err)
+	}
+
+	// Full March range: [Mar 1, Apr 1) should include all three March rows (100+200+400=700).
+	total, err := s.db.GetTotalForRange(
+		time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+	)
+	s.Require().NoError(err)
+	s.InDelta(700.00, total, 0.001, "full March total")
+
+	// Start is inclusive, end is exclusive: [Mar 1, Mar 15) excludes Mar 15.
+	total, err = s.db.GetTotalForRange(
+		time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+	)
+	s.Require().NoError(err)
+	s.InDelta(100.00, total, 0.001, "start inclusive, end exclusive")
+
+	// Empty range returns 0, not an error.
+	total, err = s.db.GetTotalForRange(
+		time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+	)
+	s.Require().NoError(err)
+	s.InDelta(0.00, total, 0.001, "empty range")
+}
+
 // Test suite runner
 func TestExpenseSuite(t *testing.T) {
 	suite.Run(t, new(ExpenseTestSuite))
