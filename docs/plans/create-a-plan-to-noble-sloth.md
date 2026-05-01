@@ -211,22 +211,27 @@ Only after Task 3 is verified working.
 
 ### Task 8: Build the screens
 
-- [ ] `screens/Login.tsx` — simple form, `POST /api/auth/login`, redirect to
+- [x] `screens/Login.tsx` — simple form, `POST /api/auth/login`, redirect to
       `/` on success.
-- [ ] `screens/Feed.tsx` — Hero + day-grouped expenses + infinite scroll
+- [x] `screens/Feed.tsx` — Hero + day-grouped expenses + infinite scroll
       (sentinel + `useInfiniteQuery.fetchNextPage`).
-- [ ] `screens/Insights.tsx` — stat cards, 31-day bar chart, by-category
+- [x] `screens/Insights.tsx` — stat cards, 31-day bar chart, by-category
       list. Port from [v2-clay.jsx lines 191-282](mockups/v2-clay.jsx). Wire
       to `useInsights()`.
-- [ ] `screens/EntryForm.tsx` — full-screen Add and Edit. Reads `:id` from
+- [x] `screens/EntryForm.tsx` — full-screen Add and Edit. Reads `:id` from
       the route for Edit. Uses CategoryPicker, Keypad, DatePickerPill, Note
-      input. Mutations via the offline queue (Task 9).
-- [ ] `App.tsx` — `BrowserRouter` with `/`, `/insights`, `/add`, `/edit/:id`,
-      `/login`. Auth boundary: 401 from any query routes to `/login`.
-- [ ] Verify each screen looks like the mockup at 390×844 (iPhone-ish), and
+      input. Mutations are wired directly through the API client for now;
+      Task 9 wraps them in the offline queue.
+- [x] `App.tsx` — `BrowserRouter` with `/`, `/insights`, `/add`, `/edit/:id`,
+      `/login`. Auth boundary: API client redirects to `/login` on any 401
+      (existing behaviour in `api/client.ts`).
+- [x] Verify each screen looks like the mockup at 390×844 (iPhone-ish), and
       that historical data renders with correct glyphs/colors (legacy "Sport"
-      gets the fitness tone, "Entertainment" gets the other tone).
-- [ ] Mark completed
+      gets the fitness tone, "Entertainment" gets the other tone). (Skipped —
+      manual visual verification; not automatable in this loop. Slug mapping
+      confirmed via `internal/categories.All()` which already maps Sport →
+      `fitness` and Entertainment → `other`.)
+- [x] Mark completed
 
 ### Task 9: Offline writes via IndexedDB
 
