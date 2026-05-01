@@ -356,22 +356,26 @@ export function EntryForm() {
     ? cachedExpenses.find((e) => e.id === editingId)
     : null;
 
-  const fetchedExpenseQuery = useQuery<Expense | null>({
+  const fetchedExpenseQuery = useQuery<Expense>({
     queryKey: ["expense", editingId],
-    queryFn: async () => {
-      if (editingId === null) return null;
-      try {
-        return await getExpense(editingId);
-      } catch {
-        return null;
+    queryFn: () => {
+      if (editingId === null) {
+        throw new Error("invalid id");
       }
+      return getExpense(editingId);
     },
     enabled: isEdit && !existingFromCache,
+    retry: false,
   });
 
   const editing: Expense | null = isEdit
     ? (existingFromCache ?? fetchedExpenseQuery.data ?? null)
     : null;
+
+  const isFetchingFromServer =
+    isEdit && !existingFromCache && fetchedExpenseQuery.isLoading;
+  const fetchFailed =
+    isEdit && !existingFromCache && fetchedExpenseQuery.isError;
 
   const { data: categories = [] } = useCategories();
   const defaultCategory = categories[0]?.label ?? "Other";
@@ -387,6 +391,63 @@ export function EntryForm() {
   const onClose = () => navigate(-1);
 
   if (isEdit && !editing) {
+    if (fetchFailed) {
+      return (
+        <div
+          style={{
+            minHeight: "100vh",
+            background: theme.bg,
+            color: theme.ink2,
+            fontFamily: FONT,
+            display: "grid",
+            placeItems: "center",
+            padding: 24,
+            textAlign: "center",
+            fontSize: 13,
+          }}
+        >
+          <div>
+            <div style={{ marginBottom: 12 }}>
+              Couldn't load this expense.
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 999,
+                background: theme.card,
+                color: theme.ink,
+                border: "none",
+                fontSize: 13,
+                fontFamily: FONT,
+                cursor: "pointer",
+              }}
+            >
+              Go back
+            </button>
+          </div>
+        </div>
+      );
+    }
+    if (isFetchingFromServer) {
+      return (
+        <div
+          style={{
+            minHeight: "100vh",
+            background: theme.bg,
+            color: theme.ink2,
+            fontFamily: FONT,
+            display: "grid",
+            placeItems: "center",
+            fontSize: 13,
+          }}
+        >
+          Loading...
+        </div>
+      );
+    }
+    // Edit ID resolves to no record — neither in cache nor fetched.
     return (
       <div
         style={{
@@ -396,10 +457,30 @@ export function EntryForm() {
           fontFamily: FONT,
           display: "grid",
           placeItems: "center",
+          padding: 24,
+          textAlign: "center",
           fontSize: 13,
         }}
       >
-        Loading...
+        <div>
+          <div style={{ marginBottom: 12 }}>Expense not found.</div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: "10px 18px",
+              borderRadius: 999,
+              background: theme.card,
+              color: theme.ink,
+              border: "none",
+              fontSize: 13,
+              fontFamily: FONT,
+              cursor: "pointer",
+            }}
+          >
+            Go back
+          </button>
+        </div>
       </div>
     );
   }

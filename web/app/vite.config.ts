@@ -47,6 +47,15 @@ export default defineConfig({
             },
           },
           {
+            urlPattern: /\/api\/expenses\/\d+$/,
+            method: 'GET',
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'api-expense-detail',
+              expiration: { maxEntries: 100 },
+            },
+          },
+          {
             urlPattern: /\/api\/insights(\?.*)?$/,
             method: 'GET',
             handler: 'StaleWhileRevalidate',

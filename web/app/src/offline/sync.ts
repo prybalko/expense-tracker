@@ -25,28 +25,41 @@ function classifyError(err: unknown): DrainOutcome {
   return "retry";
 }
 
+let inFlight: Promise<void> | null = null;
+
 export async function syncQueue(queryClient: QueryClient): Promise<void> {
   if (!isOnline()) return;
-  const result = await drainQueue(async (entry): Promise<DrainOutcome> => {
+  // Coalesce concurrent invocations. Without this, an `online` event firing
+  // while a mutation is mid-flight could replay the same queued entry through
+  // both paths and double-write.
+  if (inFlight) return inFlight;
+  inFlight = (async () => {
     try {
-      if (entry.op === "create") {
-        const { tempId: _ignored, ...input } = entry.payload;
-        void _ignored;
-        await createExpense(input);
-      } else if (entry.op === "update") {
-        await updateExpense(entry.payload.id, entry.payload.patch);
-      } else {
-        await deleteExpense(entry.payload.id);
+      const result = await drainQueue(async (entry): Promise<DrainOutcome> => {
+        try {
+          if (entry.op === "create") {
+            const { tempId: _ignored, ...input } = entry.payload;
+            void _ignored;
+            await createExpense(input);
+          } else if (entry.op === "update") {
+            await updateExpense(entry.payload.id, entry.payload.patch);
+          } else {
+            await deleteExpense(entry.payload.id);
+          }
+          return "ok";
+        } catch (err) {
+          return classifyError(err);
+        }
+      });
+      if (result.processed > 0 || result.dropped > 0) {
+        await queryClient.invalidateQueries({ queryKey: expensesQueryKey });
+        await queryClient.invalidateQueries({ queryKey: ["insights"] });
       }
-      return "ok";
-    } catch (err) {
-      return classifyError(err);
+    } finally {
+      inFlight = null;
     }
-  });
-  if (result.processed > 0 || result.dropped > 0) {
-    await queryClient.invalidateQueries({ queryKey: expensesQueryKey });
-    await queryClient.invalidateQueries({ queryKey: ["insights"] });
-  }
+  })();
+  return inFlight;
 }
 
 let detach: (() => void) | null = null;
