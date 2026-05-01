@@ -280,7 +280,7 @@ Only after Task 3 is verified working.
 
 ### Task 11: Update Dockerfile
 
-- [ ] Rewrite [Dockerfile](Dockerfile) as multi-stage:
+- [x] Rewrite [Dockerfile](Dockerfile) as multi-stage:
         - Stage `web-builder`: `node:20-alpine`, `WORKDIR /app/web/app`,
           `COPY web/app/package*.json ./`, `RUN npm ci`,
           `COPY web/app ./`, `RUN npm run build` → `/app/web/dist/`.
@@ -288,11 +288,19 @@ Only after Task 3 is verified working.
           `COPY --from=web-builder /app/web/dist /app/web/dist`,
           rest of source, `RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/server`.
           Drop `-mod=vendor` if vendoring is no longer used; otherwise keep.
+          (Vendoring is still in use, so kept `-mod=vendor`. Also added
+          `web/app/node_modules` and `web/dist` to `.dockerignore` so the
+          host build artifacts don't leak into the build context — the
+          bundle is produced fresh in the `web-builder` stage and copied
+          into the `go-builder` stage at `web/dist/` for the
+          `//go:embed all:dist` directive in `web/embed.go`.)
         - Final stage: `alpine:latest` with `ca-certificates` + `tzdata`,
           copy only `main` (the bundle is embedded). `EXPOSE 8080`,
           `CMD ["./main"]`.
-- [ ] `docker build -t expense-tracker .` succeeds.
-- [ ] Mark completed
+- [x] `docker build -t expense-tracker .` succeeds. (Smoke-tested: container
+      serves `GET /` → 200 from the embedded SPA and `GET /api/categories`
+      → 401 without auth, as expected.)
+- [x] Mark completed
 
 ### Task 12: Update docker-compose.yml
 
