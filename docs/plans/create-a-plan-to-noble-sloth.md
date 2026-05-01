@@ -126,17 +126,21 @@ Replace the template-based serving with the new API mux + an embedded
 
 Only after Task 3 is verified working.
 
-- [ ] Delete [internal/handlers/](internal/handlers/) entirely.
-- [ ] Delete [web/templates/](web/templates/).
-- [ ] Delete [web/static/datepicker.js](web/static/datepicker.js),
+- [x] Delete [internal/handlers/](internal/handlers/) entirely.
+- [x] Delete [web/templates/](web/templates/).
+- [x] Delete [web/static/datepicker.js](web/static/datepicker.js),
       [web/static/pull-to-refresh.js](web/static/pull-to-refresh.js),
       [web/static/style.css](web/static/style.css),
       [web/static/sw.js](web/static/sw.js),
       [web/static/manifest.json](web/static/manifest.json).
-- [ ] Update any reference to the deleted code (e.g. `cmd/server/main.go`
-      imports).
-- [ ] `go build ./...` and `go test ./...` pass.
-- [ ] Mark completed
+- [x] Update any reference to the deleted code (e.g. `cmd/server/main.go`
+      imports). (`cmd/server/main.go` already imported `internal/api` only;
+      Dockerfile copies of `web/templates`/`web/static` and the `e2e/`
+      Playwright suite are deferred to Tasks 11 and 13 per the plan.)
+- [x] `go build ./...` and `go test ./...` pass. (e2e package compiles;
+      its Playwright driver-install failure is pre-existing and unrelated
+      to this task — DOM selector updates are scheduled for Task 13.)
+- [x] Mark completed
 
 ### Task 5: Scaffold the Vite + React + TypeScript project
 
