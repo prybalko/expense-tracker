@@ -45,6 +45,9 @@ linters:
           - revive
         text: 'package-comments: should have a package comment'
       - linters:
+          - revive
+        text: 'var-naming: avoid meaningless package names'
+      - linters:
           - staticcheck
         text: at least one file in a package should have a package comment
       - linters:
@@ -68,6 +71,7 @@ linters:
       - third_party$
       - builtin$
       - examples$
+      - web/app/node_modules
 formatters:
   exclusions:
     generated: lax
@@ -75,3 +79,4 @@ formatters:
       - third_party$
       - builtin$
       - examples$
+      - web/app/node_modules
