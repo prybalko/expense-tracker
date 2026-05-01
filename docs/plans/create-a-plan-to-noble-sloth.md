@@ -188,26 +188,26 @@ Only after Task 3 is verified working.
 
 ### Task 7: Port shared components from the mockups
 
-- [ ] `components/CategoryGlyph.tsx` — port `CatGlyph` from
+- [x] `components/CategoryGlyph.tsx` — port `CatGlyph` from
       [data.jsx lines 22-41](mockups/data.jsx). Accepts `slug` and `size`.
-- [ ] `components/Hero.tsx` — port the hero card from
+- [x] `components/Hero.tsx` — port the hero card from
       [v2-clay.jsx lines 113-132](mockups/v2-clay.jsx).
-- [ ] `components/DayGroup.tsx` and `components/ExpenseRow.tsx` — port from
+- [x] `components/DayGroup.tsx` and `components/ExpenseRow.tsx` — port from
       [v2-clay.jsx lines 135-188](mockups/v2-clay.jsx). Drop the `who` line
       under each row (no shared-payer feature in this app).
-- [ ] `components/CategoryPicker.tsx` — paginated 4×2 horizontal swipe with
+- [x] `components/CategoryPicker.tsx` — paginated 4×2 horizontal swipe with
       page dots. Source categories from `useCategories()`. Order by usage
       count (passed in as a prop), ties by API order, then alphabetically —
       same logic as `orderedCats` in
       [v2-clay.jsx lines 296-311](mockups/v2-clay.jsx).
-- [ ] `components/Keypad.tsx` — port from
+- [x] `components/Keypad.tsx` — port from
       [v2-clay.jsx lines 519-540](mockups/v2-clay.jsx).
-- [ ] `components/DatePickerPill.tsx` + `components/CalendarGrid.tsx` — port
+- [x] `components/DatePickerPill.tsx` + `components/CalendarGrid.tsx` — port
       from [date-pickers.jsx](mockups/date-pickers.jsx).
-- [ ] `components/TabBar.tsx` — bottom nav with Feed / + / Insights, per
+- [x] `components/TabBar.tsx` — bottom nav with Feed / + / Insights, per
       [v2-clay.jsx lines 68-105](mockups/v2-clay.jsx).
-- [ ] `npx tsc --noEmit` passes.
-- [ ] Mark completed
+- [x] `npx tsc --noEmit` passes.
+- [x] Mark completed
 
 ### Task 8: Build the screens
 
