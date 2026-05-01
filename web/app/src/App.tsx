@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import "@fontsource/dm-sans/400.css";
@@ -9,7 +8,6 @@ import { Feed } from "./screens/Feed";
 import { Insights } from "./screens/Insights";
 import { CategoryDetails } from "./screens/CategoryDetails";
 import { EntryForm } from "./screens/EntryForm";
-import { setupOnlineSync } from "./offline/sync";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,13 +19,6 @@ const queryClient = new QueryClient({
 });
 
 function App() {
-  useEffect(() => {
-    const detach = setupOnlineSync(queryClient);
-    return () => {
-      detach();
-    };
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>

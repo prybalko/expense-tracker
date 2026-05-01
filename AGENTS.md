@@ -91,8 +91,8 @@ web/dist        Built bundle (gitignored apart from a placeholder)
 ```
 
 Stack: Go 1.25, SQLite via `modernc.org/sqlite` (CGo-free), React 19,
-Vite 7, TanStack Query, `vite-plugin-pwa` + Workbox, IndexedDB write
-queue via `idb`.
+Vite 7, TanStack Query, `vite-plugin-pwa` + Workbox (read-only offline
+via runtime caching of `GET /api/expenses`).
 
 ## House rules
 

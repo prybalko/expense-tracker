@@ -12,14 +12,12 @@ import {
   listExpenses,
   updateExpense,
 } from "../api/expenses";
-import { ApiError } from "../api/client";
 import type {
   CreateExpenseInput,
   Expense,
   Insights,
   UpdateExpenseInput,
 } from "../types";
-import { enqueueWrite, removeQueued } from "../offline/queue";
 import { deriveInsights, expensesForCategory } from "../insights/derive";
 
 // Single canonical cache for every read in the app. Feed shows a windowed
@@ -53,13 +51,13 @@ export function useAllExpenses(): UseQueryResult<Expense[], Error> {
 export function useInsightsFor(
   year: number,
   month: number,
-): { data: Insights | undefined; isLoading: boolean } {
+): { data: Insights | undefined } {
   const query = useAllExpenses();
   const data = useMemo(() => {
     if (!query.data) return undefined;
     return deriveInsights(query.data, year, month, new Date());
   }, [query.data, year, month]);
-  return { data, isLoading: query.isLoading };
+  return { data };
 }
 
 // useCategoryView returns CategoryDetails' four header numbers from a
@@ -107,14 +105,6 @@ function nextTempId(): number {
   return _tempIdCounter--;
 }
 
-function isNetworkError(err: unknown): boolean {
-  if (err instanceof TypeError) return true;
-  if (typeof navigator !== "undefined" && navigator.onLine === false) {
-    return true;
-  }
-  return false;
-}
-
 function todayIso(): string {
   const d = new Date();
   const y = d.getFullYear();
@@ -125,53 +115,37 @@ function todayIso(): string {
 
 type CreateContext = {
   tempId: number;
-  queueId: number | null;
   previous: Expense[] | undefined;
 };
 
-type UpdateContext = {
-  queueId: number | null;
+type RollbackContext = {
   previous: Expense[] | undefined;
 };
-
-type DeleteContext = {
-  queueId: number | null;
-  previous: Expense[] | undefined;
-};
-
-async function dropQueued(queueId: number | null): Promise<void> {
-  if (queueId === null) return;
-  try {
-    await removeQueued(queueId);
-  } catch {
-    // queue already gone or IDB unavailable — nothing to do
-  }
-}
 
 export type CreateExpenseMutation = UseMutationResult<
-  Expense | null,
+  Expense,
   Error,
   CreateExpenseInput,
   CreateContext
 >;
 
 export type UpdateExpenseMutation = UseMutationResult<
-  Expense | null,
+  Expense,
   Error,
   { id: number; patch: UpdateExpenseInput },
-  UpdateContext
+  RollbackContext
 >;
 
 export type DeleteExpenseMutation = UseMutationResult<
-  boolean,
+  void,
   Error,
   number,
-  DeleteContext
+  RollbackContext
 >;
 
 export function useCreateExpense(): CreateExpenseMutation {
   const qc = useQueryClient();
-  return useMutation<Expense | null, Error, CreateExpenseInput, CreateContext>({
+  return useMutation<Expense, Error, CreateExpenseInput, CreateContext>({
     mutationKey: ["expenses", "create"],
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: expensesQueryKey });
@@ -187,52 +161,28 @@ export function useCreateExpense(): CreateExpenseMutation {
       qc.setQueryData<Expense[]>(expensesQueryKey, (old) =>
         old ? [optimistic, ...old] : [optimistic],
       );
-      let queueId: number | null = null;
-      try {
-        queueId = await enqueueWrite({
-          op: "create",
-          payload: { ...input, tempId },
-        });
-      } catch {
-        // IDB unavailable (private browsing / quota) — proceed without offline
-        // persistence. The network call below is the source of truth.
-      }
-      return { tempId, queueId, previous };
+      return { tempId, previous };
     },
-    mutationFn: async (input) => {
-      try {
-        return await createExpense(input);
-      } catch (err) {
-        if (isNetworkError(err)) return null;
-        throw err;
-      }
-    },
+    mutationFn: (input) => createExpense(input),
     onSuccess: async (result, _vars, ctx) => {
-      if (!ctx) return;
-      if (result) {
-        await dropQueued(ctx.queueId);
-        await qc.invalidateQueries({ queryKey: expensesQueryKey });
-      } else if (ctx.queueId === null) {
-        // Network failed AND the offline queue refused the write (IDB
-        // unavailable). The optimistic row has nowhere to be persisted —
-        // roll back so the user can see and retry.
-        qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
-      }
+      // Swap the optimistic temp-id row for the canonical server row up
+      // front. The invalidate below also triggers a background refetch,
+      // but doing this synchronously means the new row is in the cache
+      // immediately — the user can't end up looking at a Feed that's
+      // briefly missing the row they just created.
+      qc.setQueryData<Expense[]>(expensesQueryKey, (old) => {
+        if (!old) return [result];
+        const replaced = old.map((e) => (e.id === ctx.tempId ? result : e));
+        // If the optimistic row wasn't in the cache for some reason
+        // (cleared/evicted between onMutate and onSuccess), prepend it.
+        return replaced.some((e) => e.id === result.id)
+          ? replaced
+          : [result, ...replaced];
+      });
+      await qc.invalidateQueries({ queryKey: expensesQueryKey });
     },
-    onError: async (err, _vars, ctx) => {
+    onError: (_err, _vars, ctx) => {
       if (!ctx) return;
-      if (err instanceof ApiError && err.status === 409) {
-        // The server already has this row — either the offline drain raced
-        // ahead and replayed our queued entry (foreground POST then comes
-        // back 409), or the (date, amount, description) unique key collides
-        // with a pre-existing row. Drop the queue entry and refetch so the
-        // canonical row replaces the optimistic one; do NOT roll back, or
-        // we'd hide a row the user really did add.
-        await dropQueued(ctx.queueId);
-        await qc.invalidateQueries({ queryKey: expensesQueryKey });
-        return;
-      }
-      await dropQueued(ctx.queueId);
       qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
     },
   });
@@ -241,10 +191,10 @@ export function useCreateExpense(): CreateExpenseMutation {
 export function useUpdateExpense(): UpdateExpenseMutation {
   const qc = useQueryClient();
   return useMutation<
-    Expense | null,
+    Expense,
     Error,
     { id: number; patch: UpdateExpenseInput },
-    UpdateContext
+    RollbackContext
   >({
     mutationKey: ["expenses", "update"],
     onMutate: async ({ id, patch }) => {
@@ -263,38 +213,14 @@ export function useUpdateExpense(): UpdateExpenseMutation {
             : e,
         ),
       );
-      let queueId: number | null = null;
-      try {
-        queueId = await enqueueWrite({
-          op: "update",
-          payload: { id, patch },
-        });
-      } catch {
-        // IDB unavailable — proceed without offline persistence.
-      }
-      return { queueId, previous };
+      return { previous };
     },
-    mutationFn: async ({ id, patch }) => {
-      try {
-        return await updateExpense(id, patch);
-      } catch (err) {
-        if (isNetworkError(err)) return null;
-        throw err;
-      }
+    mutationFn: ({ id, patch }) => updateExpense(id, patch),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: expensesQueryKey });
     },
-    onSuccess: async (result, _vars, ctx) => {
+    onError: (_err, _vars, ctx) => {
       if (!ctx) return;
-      if (result) {
-        await dropQueued(ctx.queueId);
-        await qc.invalidateQueries({ queryKey: expensesQueryKey });
-      } else if (ctx.queueId === null) {
-        // Same recovery as create: no offline queue + no network = roll back.
-        qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
-      }
-    },
-    onError: async (_err, _vars, ctx) => {
-      if (!ctx) return;
-      await dropQueued(ctx.queueId);
       qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
     },
   });
@@ -302,7 +228,7 @@ export function useUpdateExpense(): UpdateExpenseMutation {
 
 export function useDeleteExpense(): DeleteExpenseMutation {
   const qc = useQueryClient();
-  return useMutation<boolean, Error, number, DeleteContext>({
+  return useMutation<void, Error, number, RollbackContext>({
     mutationKey: ["expenses", "delete"],
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: expensesQueryKey });
@@ -310,39 +236,14 @@ export function useDeleteExpense(): DeleteExpenseMutation {
       qc.setQueryData<Expense[]>(expensesQueryKey, (old) =>
         old?.filter((e) => e.id !== id),
       );
-      let queueId: number | null = null;
-      try {
-        queueId = await enqueueWrite({
-          op: "delete",
-          payload: { id },
-        });
-      } catch {
-        // IDB unavailable — proceed without offline persistence.
-      }
-      return { queueId, previous };
+      return { previous };
     },
-    mutationFn: async (id) => {
-      try {
-        await deleteExpense(id);
-        return true;
-      } catch (err) {
-        if (isNetworkError(err)) return false;
-        throw err;
-      }
+    mutationFn: (id) => deleteExpense(id),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: expensesQueryKey });
     },
-    onSuccess: async (delivered, _vars, ctx) => {
+    onError: (_err, _vars, ctx) => {
       if (!ctx) return;
-      if (delivered) {
-        await dropQueued(ctx.queueId);
-        await qc.invalidateQueries({ queryKey: expensesQueryKey });
-      } else if (ctx.queueId === null) {
-        // Same recovery as create: no offline queue + no network = roll back.
-        qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
-      }
-    },
-    onError: async (_err, _vars, ctx) => {
-      if (!ctx) return;
-      await dropQueued(ctx.queueId);
       qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
     },
   });

@@ -32,15 +32,12 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
+        // Read-only offline: NetworkFirst lets the SW serve the last-seen
+        // expenses payload when the user is offline (subway, airplane mode)
+        // while always preferring fresh data when the network is available.
+        // Writes (POST/PATCH/DELETE) have no rule and pass through to the
+        // network — failing them is preferable to faking success.
         runtimeCaching: [
-          {
-            urlPattern: /\/api\/categories$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'api-categories',
-              expiration: { maxAgeSeconds: 60 * 60 * 24 * 30 },
-            },
-          },
           {
             urlPattern: /\/api\/expenses(\?.*)?$/,
             method: 'GET',
@@ -58,21 +55,6 @@ export default defineConfig({
               cacheName: 'api-expense-detail',
               expiration: { maxEntries: 100 },
             },
-          },
-          {
-            urlPattern: /\/api\/expenses(\/.*)?$/,
-            method: 'POST',
-            handler: 'NetworkOnly',
-          },
-          {
-            urlPattern: /\/api\/expenses\/.*$/,
-            method: 'PATCH',
-            handler: 'NetworkOnly',
-          },
-          {
-            urlPattern: /\/api\/expenses\/.*$/,
-            method: 'DELETE',
-            handler: 'NetworkOnly',
           },
         ],
       },

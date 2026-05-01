@@ -14,19 +14,18 @@ import {
 } from "../hooks/useExpenses";
 import { categories } from "../categories";
 import { getExpense } from "../api/expenses";
+import { ApiError } from "../api/client";
 import type { Expense } from "../types";
 
 function toIsoDateTime(d: Date): string {
   // Pin the user's calendar date and append local time-of-day with a Z
   // suffix. The server's per-user unique index on (date, amount, description)
   // would otherwise treat two legitimate same-day same-amount same-note
-  // expenses (e.g. two €4.50 coffees) as a duplicate and the offline drain
-  // would silently drop one. Millisecond-precision timestamps keep them
-  // distinct; a true replay (queued payload re-posted) still carries the
-  // exact stored timestamp and trips the index, so 409-driven dedupe still
-  // works. The Z suffix is intentional: the system treats dates as calendar
-  // abstractions (Feed slices the YYYY-MM-DD prefix), so a real timezone
-  // offset would let the prefix shift across midnight UTC and break grouping.
+  // expenses (e.g. two €4.50 coffees) as a duplicate and reject the second
+  // with a 409. Millisecond-precision timestamps keep them distinct. The Z
+  // suffix is intentional: the system treats dates as calendar abstractions
+  // (Feed slices the YYYY-MM-DD prefix), so a real timezone offset would let
+  // the prefix shift across midnight UTC and break grouping.
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -50,6 +49,19 @@ function sameCalendarDay(a: Date, b: Date): boolean {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
   );
+}
+
+function messageForWriteError(err: unknown): string {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return "You're offline. Try again when you're back on a connection.";
+  }
+  if (err instanceof ApiError) {
+    if (err.status === 409) {
+      return "An expense with the same date, amount, and description already exists.";
+    }
+    if (err.message) return err.message;
+  }
+  return "Couldn't save. Please try again.";
 }
 
 type FormProps = {
@@ -83,8 +95,14 @@ function FormBody({
   const [cat, setCat] = useState<string>(initialCategory);
   const [note, setNote] = useState<string>(initialNote);
   const [date, setDate] = useState<Date>(initialDate);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Clear any prior failure as soon as the user starts editing again — stale
+  // error copy from the previous attempt would otherwise stick around through
+  // the next keystroke. Each input handler funnels through these wrappers
+  // instead of calling the raw setters directly.
   const press = (k: KeypadKey) => {
+    setSubmitError(null);
     setAmt((a) => {
       if (k === "del") return a.slice(0, -1);
       if (k === ".") {
@@ -99,6 +117,21 @@ function FormBody({
     });
   };
 
+  const onCatChange = (next: string) => {
+    setSubmitError(null);
+    setCat(next);
+  };
+
+  const onNoteChange = (next: string) => {
+    setSubmitError(null);
+    setNote(next);
+  };
+
+  const onDateChange = (next: Date) => {
+    setSubmitError(null);
+    setDate(next);
+  };
+
   const createMutation = useCreateExpense();
   const updateMutation = useUpdateExpense();
   const deleteMutation = useDeleteExpense();
@@ -111,6 +144,7 @@ function FormBody({
   const submit = async () => {
     const v = parseFloat(amt);
     if (!v || submitting) return;
+    setSubmitError(null);
     // On edit, preserve the original full timestamp when the user hasn't
     // shifted the calendar day. Otherwise we'd silently overwrite the stored
     // time-of-day with "now" on every save (re-ordering the feed and
@@ -121,33 +155,42 @@ function FormBody({
     const dateStr = preserveOriginal
       ? (initialDateString as string)
       : toIsoDateTime(date);
-    if (isEdit && editingId !== null) {
-      await updateMutation.mutateAsync({
-        id: editingId,
-        patch: {
+    try {
+      if (isEdit && editingId !== null) {
+        await updateMutation.mutateAsync({
+          id: editingId,
+          patch: {
+            amount: v,
+            category: cat,
+            description: note.trim(),
+            date: dateStr,
+          },
+        });
+      } else {
+        await createMutation.mutateAsync({
           amount: v,
           category: cat,
           description: note.trim(),
           date: dateStr,
-        },
-      });
-    } else {
-      await createMutation.mutateAsync({
-        amount: v,
-        category: cat,
-        description: note.trim(),
-        date: dateStr,
-      });
+        });
+      }
+      onClose();
+    } catch (err) {
+      setSubmitError(messageForWriteError(err));
     }
-    onClose();
   };
 
   const onDelete = async () => {
     if (!isEdit || editingId === null) return;
     if (submitting) return;
     if (!window.confirm("Delete this expense?")) return;
-    await deleteMutation.mutateAsync(editingId);
-    onClose();
+    setSubmitError(null);
+    try {
+      await deleteMutation.mutateAsync(editingId);
+      onClose();
+    } catch (err) {
+      setSubmitError(messageForWriteError(err));
+    }
   };
 
   const display = amt || "0";
@@ -296,7 +339,7 @@ function FormBody({
           </div>
         </div>
 
-        <CategoryPicker value={cat} onChange={setCat} usageCounts={usageCounts} />
+        <CategoryPicker value={cat} onChange={onCatChange} usageCounts={usageCounts} />
 
         <div
           style={{
@@ -319,7 +362,7 @@ function FormBody({
             >
               Date
             </div>
-            <DatePickerPill value={date} onChange={setDate} bare />
+            <DatePickerPill value={date} onChange={onDateChange} bare />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
@@ -337,7 +380,7 @@ function FormBody({
             <input
               data-testid="entry-note"
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={(e) => onNoteChange(e.target.value)}
               placeholder="e.g. Albert Heijn"
               style={{
                 width: "100%",
@@ -366,6 +409,23 @@ function FormBody({
         }}
       >
         <Keypad onPress={press} />
+        {submitError ? (
+          <div
+            data-testid="entry-error"
+            role="alert"
+            style={{
+              marginTop: 8,
+              padding: "10px 14px",
+              borderRadius: 14,
+              background: t.bg,
+              color: t.red,
+              fontSize: 13,
+              textAlign: "center",
+            }}
+          >
+            {submitError}
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={submit}

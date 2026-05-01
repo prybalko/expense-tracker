@@ -24,8 +24,9 @@ your iOS home screen.
 
 ## Highlights
 
-- **Offline-first** — IndexedDB write queue + service worker; expenses
-  added offline sync when you're back online.
+- **Read-only offline** — service worker caches the expenses list so past
+  spending stays browsable on the subway; writes require connectivity and
+  fail visibly when offline.
 - **Installable PWA** — standalone display, custom icons, safe-area
   aware.
 - **Quick entry** — bespoke numpad keyed for fast logging.
@@ -98,7 +99,6 @@ Selectors anchor on `data-testid`.
 Go 1.25 · SQLite via [`modernc.org/sqlite`](https://modernc.org/sqlite)
 (CGo-free) · React 19 · Vite 7 · TanStack Query ·
 [`vite-plugin-pwa`](https://vite-pwa-org.netlify.app/) + Workbox ·
-IndexedDB writes via [`idb`](https://github.com/jakearchibald/idb) ·
 Playwright.
 
 See [`AGENTS.md`](AGENTS.md) for the full project layout and
