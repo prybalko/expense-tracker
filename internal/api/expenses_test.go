@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"expense-tracker/internal/auth"
 	"expense-tracker/internal/models"
 )
 
@@ -253,13 +255,11 @@ func TestHandleCreateExpenseDuplicateReturns409(t *testing.T) {
 func TestHandleListExpensesPaginationSurvivesAnchorDelete(t *testing.T) {
 	env := newTestEnv(t)
 	base := time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC)
-	ids := make([]int64, 0, 4)
 	for i, d := range []string{"oldest", "second", "third", "newest"} {
-		exp, err := env.db.InsertExpense(float64((i+1)*10), d, "Other", base.Add(time.Duration(i)*time.Hour), env.user.ID)
+		_, err := env.db.InsertExpense(float64((i+1)*10), d, "Other", base.Add(time.Duration(i)*time.Hour), env.user.ID)
 		if err != nil {
 			t.Fatalf("seed %s: %v", d, err)
 		}
-		ids = append(ids, exp.ID)
 	}
 
 	// Page 1 with limit=2 → returns ["newest", "third"], cursor anchored on "third".
@@ -275,7 +275,7 @@ func TestHandleListExpensesPaginationSurvivesAnchorDelete(t *testing.T) {
 
 	// Delete the anchor row ("third"). With the old ID-only cursor scheme the
 	// next page would silently come back empty.
-	if err := env.db.DeleteExpense(page1.Items[1].ID); err != nil {
+	if err := env.db.DeleteExpense(env.user.ID, page1.Items[1].ID); err != nil {
 		t.Fatalf("delete anchor: %v", err)
 	}
 
@@ -294,7 +294,6 @@ func TestHandleListExpensesPaginationSurvivesAnchorDelete(t *testing.T) {
 	if page2.Items[0].Description != "second" || page2.Items[1].Description != "oldest" {
 		t.Fatalf("page2 ordering wrong: %+v", page2.Items)
 	}
-	_ = ids
 }
 
 func TestHandleCreateExpenseUnauthenticated(t *testing.T) {
@@ -415,7 +414,7 @@ func TestHandleDeleteExpense(t *testing.T) {
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("status: got %d want 204", rec.Code)
 		}
-		if _, err := env.db.GetExpense(created.ID); err == nil {
+		if _, err := env.db.GetExpense(env.user.ID, created.ID); err == nil {
 			t.Fatalf("expected expense to be deleted")
 		}
 	})
@@ -432,3 +431,112 @@ func TestHandleDeleteExpense(t *testing.T) {
 }
 
 func itoa(i int64) string { return fmt.Sprintf("%d", i) }
+
+// TestExpenseEndpointsScopedToUser verifies the redesigned read paths return
+// 404 / empty results when one authenticated user tries to access another
+// user's data. The pre-redesign global queries plus a global
+// (date, amount, description) unique index combined into a cross-user
+// confidentiality + write-loss bug; this test pins the per-user-scoped
+// behavior so it can't silently regress.
+func TestExpenseEndpointsScopedToUser(t *testing.T) {
+	env := newTestEnv(t)
+
+	// Second user with their own session.
+	hash, err := auth.HashPassword("hunter2")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	bob, err := env.db.CreateUser("bob", hash)
+	if err != nil {
+		t.Fatalf("create user bob: %v", err)
+	}
+
+	withBob := func(req *http.Request) *http.Request {
+		ctx := context.WithValue(req.Context(), auth.UserContextKey, bob)
+		return req.WithContext(ctx)
+	}
+
+	// Alice and Bob each insert one expense with the same business-key tuple
+	// (date, amount, description). The per-user unique index must allow this.
+	date := time.Date(2026, 4, 15, 8, 30, 0, 0, time.UTC)
+	aliceExp, err := env.db.InsertExpense(4.50, "Coffee", "Eating Out", date, env.user.ID)
+	if err != nil {
+		t.Fatalf("alice insert: %v", err)
+	}
+	bobExp, err := env.db.InsertExpense(4.50, "Coffee", "Eating Out", date, bob.ID)
+	if err != nil {
+		t.Fatalf("bob insert: %v", err)
+	}
+
+	// Alice's list returns only Alice's row.
+	req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses", nil))
+	rec := httptest.NewRecorder()
+	env.server.handleListExpenses(rec, req)
+	var aliceList listExpensesResponse
+	decodeBody(t, rec, &aliceList)
+	if len(aliceList.Items) != 1 || aliceList.Items[0].ID != aliceExp.ID {
+		t.Fatalf("alice list got %+v, want only alice row", aliceList.Items)
+	}
+
+	// Bob fetching Alice's row by id gets a 404, not Alice's data.
+	req = withBob(buildRequest(t, http.MethodGet, "/api/expenses/"+itoa(aliceExp.ID), nil))
+	req.SetPathValue("id", itoa(aliceExp.ID))
+	rec = httptest.NewRecorder()
+	env.server.handleGetExpense(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("bob get alice's row: got %d want 404", rec.Code)
+	}
+
+	// Bob trying to update Alice's row gets a 404.
+	req = withBob(buildRequest(t, http.MethodPatch, "/api/expenses/"+itoa(aliceExp.ID),
+		map[string]any{"amount": 999.0}))
+	req.SetPathValue("id", itoa(aliceExp.ID))
+	rec = httptest.NewRecorder()
+	env.server.handleUpdateExpense(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("bob update alice's row: got %d want 404", rec.Code)
+	}
+	// Verify Alice's row is unchanged.
+	got, err := env.db.GetExpense(env.user.ID, aliceExp.ID)
+	if err != nil {
+		t.Fatalf("alice re-read: %v", err)
+	}
+	if got.Amount != 4.50 {
+		t.Fatalf("alice's row was mutated: %+v", got)
+	}
+
+	// Bob trying to delete Alice's row succeeds (204) but does not actually
+	// remove it — DeleteExpense's WHERE filter scopes to bob.
+	req = withBob(buildRequest(t, http.MethodDelete, "/api/expenses/"+itoa(aliceExp.ID), nil))
+	req.SetPathValue("id", itoa(aliceExp.ID))
+	rec = httptest.NewRecorder()
+	env.server.handleDeleteExpense(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("bob delete alice's row: got %d want 204", rec.Code)
+	}
+	if _, err := env.db.GetExpense(env.user.ID, aliceExp.ID); err != nil {
+		t.Fatalf("alice's row should still exist after bob's delete: %v", err)
+	}
+
+	// Bob's insights for the same period only see Bob's totals.
+	req = withBob(buildRequest(t, http.MethodGet, "/api/insights?view=month&year=2026&month=4", nil))
+	rec = httptest.NewRecorder()
+	env.server.handleInsights(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("bob insights: got %d want 200 (body=%q)", rec.Code, rec.Body.String())
+	}
+	var bobInsights map[string]any
+	decodeBody(t, rec, &bobInsights)
+	if total, _ := bobInsights["total"].(float64); total != 4.50 {
+		t.Fatalf("bob insights total: got %v want 4.50 (alice's row must not leak)", bobInsights["total"])
+	}
+
+	// Sanity: bob's own row is reachable to him.
+	req = withBob(buildRequest(t, http.MethodGet, "/api/expenses/"+itoa(bobExp.ID), nil))
+	req.SetPathValue("id", itoa(bobExp.ID))
+	rec = httptest.NewRecorder()
+	env.server.handleGetExpense(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("bob get bob's row: got %d want 200", rec.Code)
+	}
+}

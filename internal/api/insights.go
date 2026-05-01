@@ -6,10 +6,17 @@ import (
 	"strconv"
 	"time"
 
+	"expense-tracker/internal/auth"
 	"expense-tracker/internal/insights"
 )
 
 func (s *Server) handleInsights(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	view := r.URL.Query().Get("view")
 	if view == "" {
 		view = "month"
@@ -37,7 +44,7 @@ func (s *Server) handleInsights(w http.ResponseWriter, r *http.Request) {
 			}
 			month = n
 		}
-		ins, err := insights.Month(s.db, year, month, now)
+		ins, err := insights.Month(s.db, user.ID, year, month, now)
 		if err != nil {
 			log.Printf("api: insights month: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal server error")
@@ -45,7 +52,7 @@ func (s *Server) handleInsights(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, ins)
 	case "year":
-		ins, err := insights.Year(s.db, year, now)
+		ins, err := insights.Year(s.db, user.ID, year, now)
 		if err != nil {
 			log.Printf("api: insights year: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal server error")

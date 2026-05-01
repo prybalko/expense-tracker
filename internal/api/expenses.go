@@ -65,12 +65,17 @@ func decodeCursor(s string) (time.Time, int64, error) {
 }
 
 func (s *Server) handleGetExpense(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	exp, err := s.db.GetExpense(id)
+	exp, err := s.db.GetExpense(user.ID, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "expense not found")
@@ -84,6 +89,11 @@ func (s *Server) handleGetExpense(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListExpenses(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	limit := defaultPageSize
 	if v := r.URL.Query().Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
@@ -111,7 +121,7 @@ func (s *Server) handleListExpenses(w http.ResponseWriter, r *http.Request) {
 		beforeID = id
 	}
 
-	items, err := s.db.ListExpensesBefore(limit+1, beforeDate, beforeID)
+	items, err := s.db.ListExpensesBefore(user.ID, limit+1, beforeDate, beforeID)
 	if err != nil {
 		log.Printf("api: list expenses: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -192,13 +202,18 @@ type updateExpenseRequest struct {
 }
 
 func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 
-	existing, err := s.db.GetExpense(id)
+	existing, err := s.db.GetExpense(user.ID, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "expense not found")
@@ -241,7 +256,7 @@ func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
 		existing.Date = d
 	}
 
-	if err := s.db.UpdateExpense(existing); err != nil {
+	if err := s.db.UpdateExpense(user.ID, existing); err != nil {
 		if errors.Is(err, storage.ErrDuplicateExpense) {
 			// New (date, amount, description) collides with another row.
 			// Return 409 so the offline-queue replay path drops the entry
@@ -258,12 +273,17 @@ func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteExpense(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	if err := s.db.DeleteExpense(id); err != nil {
+	if err := s.db.DeleteExpense(user.ID, id); err != nil {
 		log.Printf("api: delete expense: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return

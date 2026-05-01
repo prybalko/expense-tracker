@@ -38,24 +38,24 @@ func (s *ExpenseTestSuite) TestDeleteExpense() {
 	s.Require().NoError(err)
 
 	// Get the expense to find its ID
-	expenses, err := s.db.ListExpenses(100, 0)
+	expenses, err := s.db.ListExpenses(1, 100, 0)
 	s.Require().NoError(err)
 	s.Require().Len(expenses, 1)
 	expenseID := expenses[0].ID
 
 	// Delete the expense
-	err = s.db.DeleteExpense(expenseID)
+	err = s.db.DeleteExpense(1, expenseID)
 	s.Require().NoError(err)
 
 	// Verify it's gone
-	expenses, err = s.db.ListExpenses(100, 0)
+	expenses, err = s.db.ListExpenses(1, 100, 0)
 	s.Require().NoError(err)
 	s.Empty(expenses, "expected no expenses after deletion")
 }
 
 func (s *ExpenseTestSuite) TestDeleteExpense_NonExistent() {
 	// Deleting a non-existent expense should not error (no-op)
-	err := s.db.DeleteExpense(99999)
+	err := s.db.DeleteExpense(1, 99999)
 	s.NoError(err, "deleting non-existent expense should not error")
 }
 
@@ -71,7 +71,7 @@ func (s *ExpenseTestSuite) TestDeleteExpense_OnlyDeletesTarget() {
 	s.Require().NoError(err)
 
 	// Get all expenses
-	expenses, err := s.db.ListExpenses(100, 0)
+	expenses, err := s.db.ListExpenses(1, 100, 0)
 	s.Require().NoError(err)
 	s.Require().Len(expenses, 3)
 
@@ -85,11 +85,11 @@ func (s *ExpenseTestSuite) TestDeleteExpense_OnlyDeletesTarget() {
 	}
 	s.Require().NotZero(lunchID, "could not find Lunch expense")
 
-	err = s.db.DeleteExpense(lunchID)
+	err = s.db.DeleteExpense(1, lunchID)
 	s.Require().NoError(err)
 
 	// Verify only 2 remain and Lunch is gone
-	expenses, err = s.db.ListExpenses(100, 0)
+	expenses, err = s.db.ListExpenses(1, 100, 0)
 	s.Require().NoError(err)
 	s.Len(expenses, 2, "expected 2 expenses after deletion")
 
@@ -118,7 +118,7 @@ func (s *ExpenseTestSuite) TestListExpenses() {
 		s.Require().NoError(err, "failed to create expense: %s", exp.description)
 	}
 
-	result, err := s.db.ListExpenses(100, 0)
+	result, err := s.db.ListExpenses(1, 100, 0)
 	s.Require().NoError(err)
 	s.Len(result, 3, "expected 3 expenses")
 
@@ -154,7 +154,7 @@ func (s *ExpenseTestSuite) TestListExpensesCurrentMonth() {
 	}
 
 	// List expenses should return all expenses (no longer filtered by month)
-	expenses, err := s.db.ListExpenses(100, 0)
+	expenses, err := s.db.ListExpenses(1, 100, 0)
 	s.Require().NoError(err)
 	s.Len(expenses, 4, "expected all expenses")
 
@@ -176,17 +176,17 @@ func (s *ExpenseTestSuite) TestListExpensesPagination() {
 	}
 
 	// Test limit
-	expenses, err := s.db.ListExpenses(2, 0)
+	expenses, err := s.db.ListExpenses(1, 2, 0)
 	s.Require().NoError(err)
 	s.Len(expenses, 2, "expected 2 expenses with limit=2")
 
 	// Test offset
-	expenses, err = s.db.ListExpenses(2, 2)
+	expenses, err = s.db.ListExpenses(1, 2, 2)
 	s.Require().NoError(err)
 	s.Len(expenses, 2, "expected 2 expenses with limit=2, offset=2")
 
 	// Test offset beyond data
-	expenses, err = s.db.ListExpenses(10, 10)
+	expenses, err = s.db.ListExpenses(1, 10, 10)
 	s.Require().NoError(err)
 	s.Empty(expenses, "expected 0 expenses with offset beyond data")
 }
@@ -215,7 +215,7 @@ func (s *ExpenseTestSuite) TestGetExpensesByMonth() {
 	}
 
 	// Test getting January 2026 expenses
-	janExpenses, err := s.db.GetExpensesByMonth(2026, 1)
+	janExpenses, err := s.db.GetExpensesByMonth(1, 2026, 1)
 	s.Require().NoError(err)
 	s.Len(janExpenses, 2, "expected 2 expenses in January 2026")
 
@@ -228,7 +228,7 @@ func (s *ExpenseTestSuite) TestGetExpensesByMonth() {
 	}
 
 	// Test getting February 2026 expenses
-	febExpenses, err := s.db.GetExpensesByMonth(2026, 2)
+	febExpenses, err := s.db.GetExpensesByMonth(1, 2026, 2)
 	s.Require().NoError(err)
 	s.Len(febExpenses, 1, "expected 1 expense in February 2026")
 	if s.Len(febExpenses, 1) {
@@ -237,7 +237,7 @@ func (s *ExpenseTestSuite) TestGetExpensesByMonth() {
 	}
 
 	// Test getting December 2025 expenses
-	decExpenses, err := s.db.GetExpensesByMonth(2025, 12)
+	decExpenses, err := s.db.GetExpensesByMonth(1, 2025, 12)
 	s.Require().NoError(err)
 	s.Len(decExpenses, 1, "expected 1 expense in December 2025")
 	if s.Len(decExpenses, 1) {
@@ -246,7 +246,7 @@ func (s *ExpenseTestSuite) TestGetExpensesByMonth() {
 	}
 
 	// Test getting a month with no expenses
-	novExpenses, err := s.db.GetExpensesByMonth(2025, 11)
+	novExpenses, err := s.db.GetExpensesByMonth(1, 2025, 11)
 	s.Require().NoError(err)
 	s.Empty(novExpenses, "expected 0 expenses in November 2025")
 }
@@ -276,7 +276,7 @@ func (s *ExpenseTestSuite) TestGetCategoryTotalsByMonth() {
 	}
 
 	// Test getting category totals for January 2026
-	totals, err := s.db.GetCategoryTotalsByMonth(2026, 1)
+	totals, err := s.db.GetCategoryTotalsByMonth(1, 2026, 1)
 	s.Require().NoError(err)
 	s.Len(totals, 3, "expected 3 categories in January 2026")
 
@@ -305,7 +305,7 @@ func (s *ExpenseTestSuite) TestGetCategoryTotalsByMonth() {
 	s.Equal("eating out", totals[2].Category)
 
 	// Test getting category totals for February 2026
-	febTotals, err := s.db.GetCategoryTotalsByMonth(2026, 2)
+	febTotals, err := s.db.GetCategoryTotalsByMonth(1, 2026, 2)
 	s.Require().NoError(err)
 	s.Len(febTotals, 1, "expected 1 category in February 2026")
 	if s.Len(febTotals, 1) {
@@ -315,7 +315,7 @@ func (s *ExpenseTestSuite) TestGetCategoryTotalsByMonth() {
 	}
 
 	// Test getting category totals for a month with no expenses
-	novTotals, err := s.db.GetCategoryTotalsByMonth(2025, 11)
+	novTotals, err := s.db.GetCategoryTotalsByMonth(1, 2025, 11)
 	s.Require().NoError(err)
 	s.Empty(novTotals, "expected 0 categories in November 2025")
 }
@@ -339,7 +339,7 @@ func (s *ExpenseTestSuite) TestGetCategoryTotalsByMonth_SingleCategory() {
 		s.Require().NoError(err)
 	}
 
-	totals, err := s.db.GetCategoryTotalsByMonth(2026, 1)
+	totals, err := s.db.GetCategoryTotalsByMonth(1, 2026, 1)
 	s.Require().NoError(err)
 	s.Len(totals, 1, "expected 1 category")
 	if s.Len(totals, 1) {
@@ -362,7 +362,7 @@ func (s *ExpenseTestSuite) TestGetExpensesByMonth_EdgeCases() {
 	s.Require().NoError(err)
 
 	// Get January expenses
-	janExpenses, err := s.db.GetExpensesByMonth(2026, 1)
+	janExpenses, err := s.db.GetExpensesByMonth(1, 2026, 1)
 	s.Require().NoError(err)
 	s.Len(janExpenses, 1, "expected 1 expense in January")
 	if s.Len(janExpenses, 1) {
@@ -370,7 +370,7 @@ func (s *ExpenseTestSuite) TestGetExpensesByMonth_EdgeCases() {
 	}
 
 	// Get February expenses
-	febExpenses, err := s.db.GetExpensesByMonth(2026, 2)
+	febExpenses, err := s.db.GetExpensesByMonth(1, 2026, 2)
 	s.Require().NoError(err)
 	s.Len(febExpenses, 1, "expected 1 expense in February")
 	if s.Len(febExpenses, 1) {
@@ -396,6 +396,7 @@ func (s *ExpenseTestSuite) TestGetTotalForRange() {
 
 	// Full March range: [Mar 1, Apr 1) should include all three March rows (100+200+400=700).
 	total, err := s.db.GetTotalForRange(
+		1,
 		time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
 		time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 	)
@@ -404,6 +405,7 @@ func (s *ExpenseTestSuite) TestGetTotalForRange() {
 
 	// Start is inclusive, end is exclusive: [Mar 1, Mar 15) excludes Mar 15.
 	total, err = s.db.GetTotalForRange(
+		1,
 		time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
 		time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
 	)
@@ -412,6 +414,7 @@ func (s *ExpenseTestSuite) TestGetTotalForRange() {
 
 	// Empty range returns 0, not an error.
 	total, err = s.db.GetTotalForRange(
+		1,
 		time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
 		time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
 	)

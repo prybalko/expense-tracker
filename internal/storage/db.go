@@ -67,8 +67,13 @@ func (db *DB) migrate() error {
 	// Add last_activity column to sessions for rolling sessions
 	_, _ = db.conn.Exec(`ALTER TABLE sessions ADD COLUMN last_activity DATETIME DEFAULT CURRENT_TIMESTAMP`)
 
-	// Add unique constraint on date, amount, description for expenses
-	_, _ = db.conn.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS expenses_date_amount_description_uindex ON expenses (date, amount, description)`)
+	// Per-user unique index on (user_id, date, amount, description). The old
+	// global index (without user_id) is dropped if present so that two users
+	// recording the same (date, amount, description) tuple don't collide,
+	// which would have leaked existence cross-user and silently dropped the
+	// second user's offline-replayed write as a "duplicate".
+	_, _ = db.conn.Exec(`DROP INDEX IF EXISTS expenses_date_amount_description_uindex`)
+	_, _ = db.conn.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS expenses_user_date_amount_description_uindex ON expenses (user_id, date, amount, description)`)
 	return nil
 }
 

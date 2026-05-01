@@ -52,15 +52,16 @@ var monthNames = []string{
 	"Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 }
 
-// Month computes Insights for the given (year, month) using `now` as the
-// "current time" reference (so the caller can inject a clock for tests).
-func Month(db *storage.DB, year, month int, now time.Time) (Insights, error) {
-	categoryTotals, err := db.GetCategoryTotalsByMonth(year, month)
+// Month computes Insights for the given (year, month) scoped to userID,
+// using `now` as the "current time" reference (so the caller can inject a
+// clock for tests).
+func Month(db *storage.DB, userID int64, year, month int, now time.Time) (Insights, error) {
+	categoryTotals, err := db.GetCategoryTotalsByMonth(userID, year, month)
 	if err != nil {
 		return Insights{}, err
 	}
 
-	dailyTotals, err := db.GetDailyTotalsForMonth(year, month)
+	dailyTotals, err := db.GetDailyTotalsForMonth(userID, year, month)
 	if err != nil {
 		return Insights{}, err
 	}
@@ -69,7 +70,7 @@ func Month(db *storage.DB, year, month int, now time.Time) (Insights, error) {
 	currentStart := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 	prevStart := currentStart.AddDate(0, -1, 0)
 
-	total, err := db.GetTotalForPeriod(year, month)
+	total, err := db.GetTotalForPeriod(userID, year, month)
 	if err != nil {
 		return Insights{}, err
 	}
@@ -80,17 +81,17 @@ func Month(db *storage.DB, year, month int, now time.Time) (Insights, error) {
 		daysElapsed := nowUTC.Day()
 		daysInPrevMonth := int(currentStart.Sub(prevStart).Hours() / 24)
 		daysCmp := min(daysElapsed, daysInPrevMonth)
-		compareTotal, err = db.GetTotalForRange(currentStart, currentStart.AddDate(0, 0, daysCmp))
+		compareTotal, err = db.GetTotalForRange(userID, currentStart, currentStart.AddDate(0, 0, daysCmp))
 		if err != nil {
 			return Insights{}, err
 		}
-		prevTotal, err = db.GetTotalForRange(prevStart, prevStart.AddDate(0, 0, daysCmp))
+		prevTotal, err = db.GetTotalForRange(userID, prevStart, prevStart.AddDate(0, 0, daysCmp))
 		if err != nil {
 			return Insights{}, err
 		}
 	} else {
 		compareTotal = total
-		prevTotal, err = db.GetTotalForPeriod(prevStart.Year(), int(prevStart.Month()))
+		prevTotal, err = db.GetTotalForPeriod(userID, prevStart.Year(), int(prevStart.Month()))
 		if err != nil {
 			return Insights{}, err
 		}
@@ -135,15 +136,15 @@ func Month(db *storage.DB, year, month int, now time.Time) (Insights, error) {
 	}, nil
 }
 
-// Year computes Insights for an entire year, using monthly buckets as the
-// chart series.
-func Year(db *storage.DB, year int, now time.Time) (Insights, error) {
-	categoryTotals, err := db.GetCategoryTotalsByYear(year)
+// Year computes Insights for an entire year scoped to userID, using monthly
+// buckets as the chart series.
+func Year(db *storage.DB, userID int64, year int, now time.Time) (Insights, error) {
+	categoryTotals, err := db.GetCategoryTotalsByYear(userID, year)
 	if err != nil {
 		return Insights{}, err
 	}
 
-	monthlyTotals, err := db.GetMonthlyTotalsForYear(year)
+	monthlyTotals, err := db.GetMonthlyTotalsForYear(userID, year)
 	if err != nil {
 		return Insights{}, err
 	}
@@ -152,7 +153,7 @@ func Year(db *storage.DB, year int, now time.Time) (Insights, error) {
 	currentYearStart := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 	prevYearStart := time.Date(year-1, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	total, err := db.GetTotalForPeriod(year, 0)
+	total, err := db.GetTotalForPeriod(userID, year, 0)
 	if err != nil {
 		return Insights{}, err
 	}
@@ -163,17 +164,17 @@ func Year(db *storage.DB, year int, now time.Time) (Insights, error) {
 		daysElapsed := nowUTC.YearDay()
 		daysInPrevYear := int(currentYearStart.Sub(prevYearStart).Hours() / 24)
 		daysCmp := min(daysElapsed, daysInPrevYear)
-		compareTotal, err = db.GetTotalForRange(currentYearStart, currentYearStart.AddDate(0, 0, daysCmp))
+		compareTotal, err = db.GetTotalForRange(userID, currentYearStart, currentYearStart.AddDate(0, 0, daysCmp))
 		if err != nil {
 			return Insights{}, err
 		}
-		prevTotal, err = db.GetTotalForRange(prevYearStart, prevYearStart.AddDate(0, 0, daysCmp))
+		prevTotal, err = db.GetTotalForRange(userID, prevYearStart, prevYearStart.AddDate(0, 0, daysCmp))
 		if err != nil {
 			return Insights{}, err
 		}
 	} else {
 		compareTotal = total
-		prevTotal, err = db.GetTotalForPeriod(year-1, 0)
+		prevTotal, err = db.GetTotalForPeriod(userID, year-1, 0)
 		if err != nil {
 			return Insights{}, err
 		}

@@ -18,13 +18,13 @@ import type { Expense } from "../types";
 
 function toIsoDateTime(d: Date): string {
   // Pin the user's calendar date and append local time-of-day with a Z
-  // suffix. The server's unique index on (date, amount, description) would
-  // otherwise treat two legitimate same-day same-amount same-note expenses
-  // (e.g. two €4.50 coffees) as a duplicate and the offline drain would
-  // silently drop one. Millisecond-precision timestamps keep them distinct;
-  // a true replay (queued payload re-posted) still carries the exact stored
-  // timestamp and trips the index, so 409-driven dedupe still works.
-  // The Z suffix is intentional: the system treats dates as calendar
+  // suffix. The server's per-user unique index on (date, amount, description)
+  // would otherwise treat two legitimate same-day same-amount same-note
+  // expenses (e.g. two €4.50 coffees) as a duplicate and the offline drain
+  // would silently drop one. Millisecond-precision timestamps keep them
+  // distinct; a true replay (queued payload re-posted) still carries the
+  // exact stored timestamp and trips the index, so 409-driven dedupe still
+  // works. The Z suffix is intentional: the system treats dates as calendar
   // abstractions (Feed slices the YYYY-MM-DD prefix), so a real timezone
   // offset would let the prefix shift across midnight UTC and break grouping.
   const y = d.getFullYear();
@@ -44,6 +44,14 @@ function parseIsoDate(s: string): Date {
   return new Date();
 }
 
+function sameCalendarDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
 type FormProps = {
   isEdit: boolean;
   editingId: number | null;
@@ -51,6 +59,10 @@ type FormProps = {
   initialCategory: string;
   initialNote: string;
   initialDate: Date;
+  // Original full timestamp string from the server, preserved across edits
+  // so that re-saving an unchanged calendar date doesn't silently shift the
+  // expense's stored time-of-day (and re-order it in the feed).
+  initialDateString: string | null;
   usageCounts: Record<string, number>;
   onClose: () => void;
 };
@@ -62,6 +74,7 @@ function FormBody({
   initialCategory,
   initialNote,
   initialDate,
+  initialDateString,
   usageCounts,
   onClose,
 }: FormProps) {
@@ -98,7 +111,16 @@ function FormBody({
   const submit = async () => {
     const v = parseFloat(amt);
     if (!v || submitting) return;
-    const dateStr = toIsoDateTime(date);
+    // On edit, preserve the original full timestamp when the user hasn't
+    // shifted the calendar day. Otherwise we'd silently overwrite the stored
+    // time-of-day with "now" on every save (re-ordering the feed and
+    // mutating the unique-index tuple even when the user only touched the
+    // amount or note).
+    const preserveOriginal =
+      isEdit && initialDateString !== null && sameCalendarDay(date, initialDate);
+    const dateStr = preserveOriginal
+      ? (initialDateString as string)
+      : toIsoDateTime(date);
     if (isEdit && editingId !== null) {
       await updateMutation.mutateAsync({
         id: editingId,
@@ -504,6 +526,7 @@ export function EntryForm() {
   const initialCategory = editing ? editing.category : defaultCategory;
   const initialNote = editing ? (editing.description ?? "") : "";
   const initialDate = editing ? parseIsoDate(editing.date) : new Date();
+  const initialDateString = editing ? editing.date : null;
   const formKey = editing ? `edit-${editing.id}` : `new-${defaultCategory}`;
 
   return (
@@ -515,6 +538,7 @@ export function EntryForm() {
       initialCategory={initialCategory}
       initialNote={initialNote}
       initialDate={initialDate}
+      initialDateString={initialDateString}
       usageCounts={usageCounts}
       onClose={onClose}
     />

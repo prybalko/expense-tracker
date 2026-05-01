@@ -35,7 +35,7 @@ func TestMonthCompletedPeriod(t *testing.T) {
 	seed(t, db, 100, "Jan groceries", "Groceries", time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC))
 
 	now := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC) // far in the future
-	got, err := Month(db, 2024, 2, now)
+	got, err := Month(db, 1, 2024, 2, now)
 	if err != nil {
 		t.Fatalf("Month: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestMonthCurrentPeriodMTDCompare(t *testing.T) {
 	seed(t, db, 999, "Feb late", "Groceries", time.Date(2024, 2, 25, 9, 0, 0, 0, time.UTC))
 
 	now := time.Date(2024, 3, 10, 23, 30, 0, 0, time.UTC)
-	got, err := Month(db, 2024, 3, now)
+	got, err := Month(db, 1, 2024, 3, now)
 	if err != nil {
 		t.Fatalf("Month: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestMonthNoPriorData(t *testing.T) {
 	db := newTestDB(t)
 	seed(t, db, 25, "Solo", "Groceries", time.Date(2024, 4, 5, 9, 0, 0, 0, time.UTC))
 
-	got, err := Month(db, 2024, 4, time.Date(2024, 8, 1, 0, 0, 0, 0, time.UTC))
+	got, err := Month(db, 1, 2024, 4, time.Date(2024, 8, 1, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("Month: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestYearCompletedPeriod(t *testing.T) {
 	seed(t, db, 100, "Old", "Groceries", time.Date(2022, 6, 1, 9, 0, 0, 0, time.UTC))
 
 	now := time.Date(2025, 1, 5, 0, 0, 0, 0, time.UTC)
-	got, err := Year(db, 2023, now)
+	got, err := Year(db, 1, 2023, now)
 	if err != nil {
 		t.Fatalf("Year: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestCategoryPercentages(t *testing.T) {
 	seed(t, db, 75, "A", "Groceries", time.Date(2024, 5, 1, 9, 0, 0, 0, time.UTC))
 	seed(t, db, 25, "B", "Transport", time.Date(2024, 5, 2, 9, 0, 0, 0, time.UTC))
 
-	got, err := Month(db, 2024, 5, time.Date(2024, 12, 1, 0, 0, 0, 0, time.UTC))
+	got, err := Month(db, 1, 2024, 5, time.Date(2024, 12, 1, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("Month: %v", err)
 	}
