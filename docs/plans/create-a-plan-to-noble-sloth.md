@@ -66,15 +66,15 @@ Create `internal/api/` with one file per resource. Reuse
 [internal/auth/middleware.go](internal/auth/middleware.go) verbatim for
 protected routes.
 
-- [ ] `internal/api/json.go` — `writeJSON(w, status, v)`,
+- [x] `internal/api/json.go` — `writeJSON(w, status, v)`,
       `decodeJSON(r, &v)`, error envelope `{ "error": "..." }`.
-- [ ] `internal/api/auth.go` — `POST /api/auth/login` (JSON
+- [x] `internal/api/auth.go` — `POST /api/auth/login` (JSON
       `{username, password}` → sets `session` cookie, returns user),
       `POST /api/auth/logout`, `GET /api/auth/me`. Uses
       [internal/auth/sessions.go](internal/auth/sessions.go).
-- [ ] `internal/api/categories.go` — `GET /api/categories` returns
+- [x] `internal/api/categories.go` — `GET /api/categories` returns
       `internal/categories.All()`.
-- [ ] `internal/api/expenses.go` — CRUD:
+- [x] `internal/api/expenses.go` — CRUD:
         - `GET /api/expenses?limit=50&before=<id>` returns
           `{items: [...], nextCursor: string|null}`. Add a cursor variant of
           `ListExpenses` in [internal/storage/storage.go](internal/storage/storage.go)
@@ -82,15 +82,18 @@ protected routes.
         - `POST /api/expenses` creates from JSON body.
         - `PATCH /api/expenses/:id` updates partial fields.
         - `DELETE /api/expenses/:id`.
-- [ ] `internal/api/insights.go` — `GET /api/insights?view=month&year=YYYY&month=M`
+- [x] `internal/api/insights.go` — `GET /api/insights?view=month&year=YYYY&month=M`
       (and `view=year`) returns one combined response: monthly total, delta,
       avg-per-day, daily series, by-category breakdown.
-- [ ] `internal/api/router.go` — wires all routes, applies
+- [x] `internal/api/router.go` — wires all routes, applies
       `auth.AuthMiddleware` to everything except `/api/auth/login`.
-- [ ] Add table-driven tests in `internal/api/*_test.go` covering each
+      (Implemented as `Server.authMiddleware` in `internal/api/middleware.go`
+      to avoid an `auth ↔ storage` import cycle; session helpers and
+      constants live in `internal/auth/sessions.go`.)
+- [x] Add table-driven tests in `internal/api/*_test.go` covering each
       endpoint's happy path + at least one error case.
-- [ ] `go test ./internal/api/...` passes.
-- [ ] Mark completed
+- [x] `go test ./internal/api/...` passes.
+- [x] Mark completed
 
 ### Task 3: Wire the new API + SPA fallback in main.go
 

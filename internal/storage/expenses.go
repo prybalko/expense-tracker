@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"database/sql"
+	"errors"
 	"time"
 
 	"expense-tracker/internal/models"
@@ -8,14 +10,36 @@ import (
 
 // CreateExpense inserts a new expense into the database.
 func (db *DB) CreateExpense(amount float64, description, category string, date time.Time, userID int64) error {
+	_, err := db.InsertExpense(amount, description, category, date, userID)
+	return err
+}
+
+// InsertExpense inserts a new expense and returns the persisted row, including
+// the auto-generated id and resolved date.
+func (db *DB) InsertExpense(amount float64, description, category string, date time.Time, userID int64) (*models.Expense, error) {
 	if date.IsZero() {
 		date = time.Now()
 	}
-	_, err := db.conn.Exec(
+	res, err := db.conn.Exec(
 		"INSERT INTO expenses (amount, description, category, date, user_id) VALUES (?, ?, ?, ?, ?)",
 		amount, description, category, date, userID,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+	uid := userID
+	return &models.Expense{
+		ID:          id,
+		Amount:      amount,
+		Description: description,
+		Category:    category,
+		Date:        date,
+		UserID:      &uid,
+	}, nil
 }
 
 // GetExpense retrieves a single expense by ID.
@@ -58,17 +82,59 @@ func (db *DB) ListExpenses(limit, offset int) ([]models.Expense, error) {
 		return nil, err
 	}
 	defer rows.Close()
+	return scanExpenses(rows)
+}
 
-	var expenses []models.Expense
+// ListExpensesBefore returns up to `limit` expenses ordered by (date DESC, id DESC).
+// When beforeID > 0, only rows that come strictly after the row with that id
+// in this ordering are returned. This is the cursor-based pagination used by
+// the JSON API.
+func (db *DB) ListExpensesBefore(limit int, beforeID int64) ([]models.Expense, error) {
+	if beforeID > 0 {
+		var cursorDate time.Time
+		err := db.conn.QueryRow("SELECT date FROM expenses WHERE id = ?", beforeID).Scan(&cursorDate)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		rows, err := db.conn.Query(
+			`SELECT id, amount, description, category, date, user_id FROM expenses
+			 WHERE date < ? OR (date = ? AND id < ?)
+			 ORDER BY date DESC, id DESC
+			 LIMIT ?`,
+			cursorDate, cursorDate, beforeID, limit,
+		)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		return scanExpenses(rows)
+	}
+	rows, err := db.conn.Query(
+		`SELECT id, amount, description, category, date, user_id FROM expenses
+		 ORDER BY date DESC, id DESC
+		 LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanExpenses(rows)
+}
+
+func scanExpenses(rows *sql.Rows) ([]models.Expense, error) {
+	var out []models.Expense
 	for rows.Next() {
 		var e models.Expense
 		if err := rows.Scan(&e.ID, &e.Amount, &e.Description, &e.Category, &e.Date, &e.UserID); err != nil {
 			return nil, err
 		}
-		expenses = append(expenses, e)
+		out = append(out, e)
 	}
-
-	return expenses, rows.Err()
+	return out, rows.Err()
 }
 
 // GetCurrentMonthTotal returns the total spent in the current month.
