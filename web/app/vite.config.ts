@@ -17,7 +17,12 @@ export default defineConfig({
         display: 'standalone',
         theme_color: '#F4F1EA',
         background_color: '#F4F1EA',
-        icons: [],
+        icons: [
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
@@ -34,6 +39,7 @@ export default defineConfig({
           },
           {
             urlPattern: /\/api\/expenses(\?.*)?$/,
+            method: 'GET',
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'api-expenses',
@@ -42,8 +48,24 @@ export default defineConfig({
           },
           {
             urlPattern: /\/api\/insights(\?.*)?$/,
+            method: 'GET',
             handler: 'StaleWhileRevalidate',
             options: { cacheName: 'api-insights' },
+          },
+          {
+            urlPattern: /\/api\/expenses(\/.*)?$/,
+            method: 'POST',
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /\/api\/expenses\/.*$/,
+            method: 'PATCH',
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /\/api\/expenses\/.*$/,
+            method: 'DELETE',
+            handler: 'NetworkOnly',
           },
         ],
       },
