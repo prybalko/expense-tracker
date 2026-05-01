@@ -76,19 +76,18 @@ export function Feed() {
   const grouped = useMemo(() => groupByDay(allItems), [allItems]);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const hasNextPage = expenses.hasNextPage;
+  const isFetchingNextPage = expenses.isFetchingNextPage;
+  const fetchNextPage = expenses.fetchNextPage;
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
-    if (!expenses.hasNextPage) return;
+    if (!hasNextPage) return;
     const obs = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (
-            entry.isIntersecting &&
-            expenses.hasNextPage &&
-            !expenses.isFetchingNextPage
-          ) {
-            expenses.fetchNextPage();
+          if (entry.isIntersecting && !isFetchingNextPage) {
+            fetchNextPage();
           }
         }
       },
@@ -96,7 +95,7 @@ export function Feed() {
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [expenses]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const heroMonth =
     insights.data?.monthName ?? MONTH_NAMES[today.getMonth()] ?? "";
