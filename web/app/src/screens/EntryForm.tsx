@@ -16,11 +16,26 @@ import { useCategories } from "../hooks/useCategories";
 import { getExpense } from "../api/expenses";
 import type { Expense } from "../types";
 
-function toIsoDate(d: Date): string {
+function toIsoDateTime(d: Date): string {
+  // Pin the user's calendar date and append local time-of-day with a Z
+  // suffix. The server's unique index on (date, amount, description) would
+  // otherwise treat two legitimate same-day same-amount same-note expenses
+  // (e.g. two €4.50 coffees) as a duplicate and the offline drain would
+  // silently drop one. Millisecond-precision timestamps keep them distinct;
+  // a true replay (queued payload re-posted) still carries the exact stored
+  // timestamp and trips the index, so 409-driven dedupe still works.
+  // The Z suffix is intentional: the system treats dates as calendar
+  // abstractions (Feed slices the YYYY-MM-DD prefix), so a real timezone
+  // offset would let the prefix shift across midnight UTC and break grouping.
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2, "0");
+  const min = String(now.getMinutes()).padStart(2, "0");
+  const s = String(now.getSeconds()).padStart(2, "0");
+  const ms = String(now.getMilliseconds()).padStart(3, "0");
+  return `${y}-${m}-${day}T${h}:${min}:${s}.${ms}Z`;
 }
 
 function parseIsoDate(s: string): Date {
@@ -83,7 +98,7 @@ function FormBody({
   const submit = async () => {
     const v = parseFloat(amt);
     if (!v || submitting) return;
-    const dateStr = toIsoDate(date);
+    const dateStr = toIsoDateTime(date);
     if (isEdit && editingId !== null) {
       await updateMutation.mutateAsync({
         id: editingId,

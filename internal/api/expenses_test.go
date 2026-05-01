@@ -224,6 +224,79 @@ func TestHandleCreateExpense(t *testing.T) {
 	}
 }
 
+func TestHandleCreateExpenseDuplicateReturns409(t *testing.T) {
+	env := newTestEnv(t)
+
+	// First insert succeeds.
+	body := map[string]any{
+		"amount": 12.34, "description": "Coffee", "category": "Eating Out",
+		"date": "2026-04-15T08:30:00Z",
+	}
+	req := env.withUser(buildRequest(t, http.MethodPost, "/api/expenses", body))
+	rec := httptest.NewRecorder()
+	env.server.handleCreateExpense(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("first insert: got %d want 201 (body=%q)", rec.Code, rec.Body.String())
+	}
+
+	// Replaying the same payload (e.g. an offline-queue retry whose original
+	// already landed) must come back as 409 — not 500 — so the queued entry
+	// is dropped instead of jammed behind a "retryable" 5xx.
+	req = env.withUser(buildRequest(t, http.MethodPost, "/api/expenses", body))
+	rec = httptest.NewRecorder()
+	env.server.handleCreateExpense(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("duplicate insert: got %d want 409 (body=%q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleListExpensesPaginationSurvivesAnchorDelete(t *testing.T) {
+	env := newTestEnv(t)
+	base := time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC)
+	ids := make([]int64, 0, 4)
+	for i, d := range []string{"oldest", "second", "third", "newest"} {
+		exp, err := env.db.InsertExpense(float64((i+1)*10), d, "Other", base.Add(time.Duration(i)*time.Hour), env.user.ID)
+		if err != nil {
+			t.Fatalf("seed %s: %v", d, err)
+		}
+		ids = append(ids, exp.ID)
+	}
+
+	// Page 1 with limit=2 → returns ["newest", "third"], cursor anchored on "third".
+	req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?limit=2", nil))
+	rec := httptest.NewRecorder()
+	env.server.handleListExpenses(rec, req)
+	var page1 listExpensesResponse
+	decodeBody(t, rec, &page1)
+	if len(page1.Items) != 2 || page1.NextCursor == nil {
+		t.Fatalf("page1 setup wrong: %+v", page1)
+	}
+	cursor := *page1.NextCursor
+
+	// Delete the anchor row ("third"). With the old ID-only cursor scheme the
+	// next page would silently come back empty.
+	if err := env.db.DeleteExpense(page1.Items[1].ID); err != nil {
+		t.Fatalf("delete anchor: %v", err)
+	}
+
+	// Page 2 with the cached cursor must still surface "second" and "oldest".
+	req = env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?limit=2&before="+cursor, nil))
+	rec = httptest.NewRecorder()
+	env.server.handleListExpenses(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("page2 status: got %d (body=%q)", rec.Code, rec.Body.String())
+	}
+	var page2 listExpensesResponse
+	decodeBody(t, rec, &page2)
+	if len(page2.Items) != 2 {
+		t.Fatalf("page2 items: got %d want 2 (%+v)", len(page2.Items), page2.Items)
+	}
+	if page2.Items[0].Description != "second" || page2.Items[1].Description != "oldest" {
+		t.Fatalf("page2 ordering wrong: %+v", page2.Items)
+	}
+	_ = ids
+}
+
 func TestHandleCreateExpenseUnauthenticated(t *testing.T) {
 	env := newTestEnv(t)
 	// No user in context.
@@ -294,6 +367,37 @@ func TestHandleUpdateExpense(t *testing.T) {
 			t.Fatalf("status: got %d want 400", rec.Code)
 		}
 	})
+}
+
+func TestHandleUpdateExpenseDuplicateReturns409(t *testing.T) {
+	env := newTestEnv(t)
+
+	base := time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC)
+	first, err := env.db.InsertExpense(10, "Coffee", "Eating Out", base, env.user.ID)
+	if err != nil {
+		t.Fatalf("seed first: %v", err)
+	}
+	second, err := env.db.InsertExpense(20, "Lunch", "Eating Out", base.Add(time.Hour), env.user.ID)
+	if err != nil {
+		t.Fatalf("seed second: %v", err)
+	}
+
+	// Patch `second` so its (date, amount, description) collides with `first`.
+	// A queued update whose collision is permanent must come back as 409 —
+	// not 500 — so the offline replay path drops it instead of jamming the
+	// queue behind a "retryable" 5xx.
+	body := map[string]any{
+		"amount":      first.Amount,
+		"description": first.Description,
+		"date":        first.Date.UTC().Format(time.RFC3339Nano),
+	}
+	req := env.withUser(buildRequest(t, http.MethodPatch, "/api/expenses/"+itoa(second.ID), body))
+	req.SetPathValue("id", itoa(second.ID))
+	rec := httptest.NewRecorder()
+	env.server.handleUpdateExpense(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status: got %d want 409 (body=%q)", rec.Code, rec.Body.String())
+	}
 }
 
 func TestHandleDeleteExpense(t *testing.T) {

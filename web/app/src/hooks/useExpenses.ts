@@ -12,6 +12,7 @@ import {
   updateExpense,
   type ListExpensesParams,
 } from "../api/expenses";
+import { ApiError } from "../api/client";
 import type {
   CreateExpenseInput,
   Expense,
@@ -190,8 +191,20 @@ export function useCreateExpense(): CreateExpenseMutation {
         qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
       }
     },
-    onError: async (_err, _vars, ctx) => {
+    onError: async (err, _vars, ctx) => {
       if (!ctx) return;
+      if (err instanceof ApiError && err.status === 409) {
+        // The server already has this row — either the offline drain raced
+        // ahead and replayed our queued entry (foreground POST then comes
+        // back 409), or the (date, amount, description) unique key collides
+        // with a pre-existing row. Drop the queue entry and refetch so the
+        // canonical row replaces the optimistic one; do NOT roll back, or
+        // we'd hide a row the user really did add.
+        await dropQueued(ctx.queueId);
+        await qc.invalidateQueries({ queryKey: expensesQueryKey });
+        await qc.invalidateQueries({ queryKey: ["insights"] });
+        return;
+      }
       await dropQueued(ctx.queueId);
       qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
     },

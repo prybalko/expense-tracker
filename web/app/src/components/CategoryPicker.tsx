@@ -40,12 +40,14 @@ export function CategoryPicker({ value, onChange, usageCounts = {} }: Props) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [page, setPage] = useState(0);
 
+  // Re-sort when categories change, and once more when usage data first
+  // becomes available — but not on every usage-count tick after that, so the
+  // order doesn't shuffle mid-session as the user records new expenses.
+  const hasUsageData = Object.keys(usageCounts).length > 0;
   const ordered = useMemo(
     () => orderCategories(categories, usageCounts),
-    // Recompute only when categories themselves change so order doesn't shift
-    // mid-session as usage counts update.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [categories],
+    [categories, hasUsageData],
   );
 
   const pages: Category[][] = [];

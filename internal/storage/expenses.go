@@ -6,7 +6,28 @@ import (
 	"time"
 
 	"expense-tracker/internal/models"
+
+	sqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
+
+// ErrDuplicateExpense indicates a row with the same (date, amount, description)
+// already exists. Returned by InsertExpense when the unique index rejects the
+// row, so callers can map it to a 409 Conflict instead of a generic 500. This
+// matters for the offline replay path: a queued create whose original write
+// already landed must be dropped, not retried indefinitely.
+var ErrDuplicateExpense = errors.New("expense already exists")
+
+func isUniqueConstraintError(err error) bool {
+	var serr *sqlite.Error
+	if !errors.As(err, &serr) {
+		return false
+	}
+	code := serr.Code()
+	return code == sqlite3.SQLITE_CONSTRAINT_UNIQUE ||
+		code == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY ||
+		code == sqlite3.SQLITE_CONSTRAINT
+}
 
 // CreateExpense inserts a new expense into the database.
 func (db *DB) CreateExpense(amount float64, description, category string, date time.Time, userID int64) error {
@@ -15,16 +36,29 @@ func (db *DB) CreateExpense(amount float64, description, category string, date t
 }
 
 // InsertExpense inserts a new expense and returns the persisted row, including
-// the auto-generated id and resolved date.
+// the auto-generated id and resolved date. If the row collides with the
+// existing unique index on (date, amount, description), it returns
+// ErrDuplicateExpense so callers can distinguish "already there" from a real
+// server error.
+//
+// Dates are normalised to UTC before binding. The driver stores time.Time as
+// text via t.String(), and SQLite compares text rows lexicographically — so
+// mixing zones across rows would silently break ORDER BY date and the
+// (date, id) cursor in ListExpensesBefore (whose anchor is reconstructed in
+// UTC).
 func (db *DB) InsertExpense(amount float64, description, category string, date time.Time, userID int64) (*models.Expense, error) {
 	if date.IsZero() {
 		date = time.Now()
 	}
+	date = date.UTC()
 	res, err := db.conn.Exec(
 		"INSERT INTO expenses (amount, description, category, date, user_id) VALUES (?, ?, ?, ?, ?)",
 		amount, description, category, date, userID,
 	)
 	if err != nil {
+		if isUniqueConstraintError(err) {
+			return nil, ErrDuplicateExpense
+		}
 		return nil, err
 	}
 	id, err := res.LastInsertId()
@@ -56,12 +90,25 @@ func (db *DB) GetExpense(id int64) (*models.Expense, error) {
 	return &e, nil
 }
 
-// UpdateExpense updates an existing expense in the database.
+// UpdateExpense updates an existing expense in the database. If the new
+// (date, amount, description) tuple collides with the unique index, it
+// returns ErrDuplicateExpense so handlers can map it to 409 Conflict
+// instead of a generic 500 — the offline-replay path treats 5xx as
+// retryable, and a permanent collision would otherwise jam the queue.
+//
+// The date is normalised to UTC for the same reason as InsertExpense: the
+// driver writes time.Time as t.String() text and SQLite compares it
+// lexicographically, so mixed zones would corrupt ORDER BY and the
+// cursor's (date, id) round-trip.
 func (db *DB) UpdateExpense(e *models.Expense) error {
+	e.Date = e.Date.UTC()
 	_, err := db.conn.Exec(
 		"UPDATE expenses SET amount = ?, description = ?, category = ?, date = ? WHERE id = ?",
 		e.Amount, e.Description, e.Category, e.Date, e.ID,
 	)
+	if err != nil && isUniqueConstraintError(err) {
+		return ErrDuplicateExpense
+	}
 	return err
 }
 
@@ -86,25 +133,20 @@ func (db *DB) ListExpenses(limit, offset int) ([]models.Expense, error) {
 }
 
 // ListExpensesBefore returns up to `limit` expenses ordered by (date DESC, id DESC).
-// When beforeID > 0, only rows that come strictly after the row with that id
-// in this ordering are returned. This is the cursor-based pagination used by
-// the JSON API.
-func (db *DB) ListExpensesBefore(limit int, beforeID int64) ([]models.Expense, error) {
+// When beforeID > 0, only rows that come strictly after the (beforeDate, beforeID)
+// pair in this ordering are returned. The caller passes both the date and id from
+// the previous page's tail so that pagination keeps working even after the anchor
+// is deleted — we never re-read the anchor row from the database. Edits that move
+// the anchor's date are the standard keyset-pagination caveat: shifting earlier
+// can cause a duplicate, shifting later can cause a skip.
+func (db *DB) ListExpensesBefore(limit int, beforeDate time.Time, beforeID int64) ([]models.Expense, error) {
 	if beforeID > 0 {
-		var cursorDate time.Time
-		err := db.conn.QueryRow("SELECT date FROM expenses WHERE id = ?", beforeID).Scan(&cursorDate)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil, nil
-			}
-			return nil, err
-		}
 		rows, err := db.conn.Query(
 			`SELECT id, amount, description, category, date, user_id FROM expenses
 			 WHERE date < ? OR (date = ? AND id < ?)
 			 ORDER BY date DESC, id DESC
 			 LIMIT ?`,
-			cursorDate, cursorDate, beforeID, limit,
+			beforeDate, beforeDate, beforeID, limit,
 		)
 		if err != nil {
 			return nil, err
