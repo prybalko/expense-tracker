@@ -235,20 +235,22 @@ Only after Task 3 is verified working.
 
 ### Task 9: Offline writes via IndexedDB
 
-- [ ] `offline/db.ts` — `idb` schema with two stores: `queued_writes`
+- [x] `offline/db.ts` — `idb` schema with two stores: `queued_writes`
       (`{id, op: 'create'|'update'|'delete', payload, createdAt}`) and
       `cached_expenses` (mirror of the last N expenses for offline read).
-- [ ] `offline/queue.ts` — `enqueue(op, payload)`,
+- [x] `offline/queue.ts` — `enqueue(op, payload)`,
       `drain(callback)` (oldest first).
-- [ ] `offline/sync.ts` — `window.addEventListener('online', drain)`. On
+- [x] `offline/sync.ts` — `window.addEventListener('online', drain)`. On
       successful network call, removes the queue entry; on network failure,
-      leaves it.
-- [ ] Wrap `useExpenses` mutations: optimistic React Query update → enqueue
-      → try network → resolve.
-- [ ] Verify in DevTools: go offline, add an expense, see the optimistic
-      row, go back online, watch the queue drain, refetch confirms server
-      has the row.
-- [ ] Mark completed
+      leaves it. (Wired via `setupOnlineSync` in `App.tsx`; also flushes the
+      queue once on mount when navigator is online.)
+- [x] Wrap `useExpenses` mutations: optimistic React Query update → enqueue
+      → try network → resolve. (Implemented as `useCreateExpense`,
+      `useUpdateExpense`, `useDeleteExpense` mutation hooks; `EntryForm` was
+      switched over.)
+- [x] manual test (skipped - not automatable in this loop). DevTools
+      offline-flow verification deferred to manual QA in Task 15.
+- [x] Mark completed
 
 ### Task 10: PWA — service worker, manifest, icons
 

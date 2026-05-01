@@ -1,19 +1,19 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { theme, FONT } from "../theme";
 import { CategoryPicker } from "../components/CategoryPicker";
 import { Keypad } from "../components/Keypad";
 import type { KeypadKey } from "../components/Keypad";
 import { DatePickerPill } from "../components/DatePickerPill";
-import { useExpenses, expensesQueryKey } from "../hooks/useExpenses";
-import { useCategories } from "../hooks/useCategories";
 import {
-  createExpense,
-  updateExpense,
-  deleteExpense,
-  listExpenses,
-} from "../api/expenses";
+  useExpenses,
+  useCreateExpense,
+  useUpdateExpense,
+  useDeleteExpense,
+} from "../hooks/useExpenses";
+import { useCategories } from "../hooks/useCategories";
+import { listExpenses } from "../api/expenses";
 import type { Expense } from "../types";
 
 function toIsoDate(d: Date): string {
@@ -51,7 +51,6 @@ function FormBody({
   onClose,
 }: FormProps) {
   const t = theme;
-  const queryClient = useQueryClient();
   const [amt, setAmt] = useState<string>(initialAmt);
   const [cat, setCat] = useState<string>(initialCategory);
   const [note, setNote] = useState<string>(initialNote);
@@ -72,30 +71,9 @@ function FormBody({
     });
   };
 
-  const createMutation = useMutation({
-    mutationFn: createExpense,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: expensesQueryKey });
-      queryClient.invalidateQueries({ queryKey: ["insights"] });
-    },
-  });
-  const updateMutation = useMutation({
-    mutationFn: (input: {
-      id: number;
-      patch: Parameters<typeof updateExpense>[1];
-    }) => updateExpense(input.id, input.patch),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: expensesQueryKey });
-      queryClient.invalidateQueries({ queryKey: ["insights"] });
-    },
-  });
-  const deleteMutation = useMutation({
-    mutationFn: deleteExpense,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: expensesQueryKey });
-      queryClient.invalidateQueries({ queryKey: ["insights"] });
-    },
-  });
+  const createMutation = useCreateExpense();
+  const updateMutation = useUpdateExpense();
+  const deleteMutation = useDeleteExpense();
 
   const submitting =
     createMutation.isPending ||
