@@ -173,18 +173,18 @@ Only after Task 3 is verified working.
 
 ### Task 6: Theme, types, and API client
 
-- [ ] `web/app/src/theme.ts` — copy `THEMES.linen` from
+- [x] `web/app/src/theme.ts` — copy `THEMES.linen` from
       [v2-clay.jsx lines 11-44](mockups/v2-clay.jsx) verbatim. Export it as
       the only theme.
-- [ ] `web/app/src/types.ts` — `Expense`, `Category`, `Insights`, `User`.
-- [ ] `web/app/src/api/client.ts` — `fetch` wrapper with `credentials:
+- [x] `web/app/src/types.ts` — `Expense`, `Category`, `Insights`, `User`.
+- [x] `web/app/src/api/client.ts` — `fetch` wrapper with `credentials:
       'include'`, JSON content-type, automatic 401 → redirect to `/login`.
-- [ ] `web/app/src/api/{auth,categories,expenses,insights}.ts` — typed
+- [x] `web/app/src/api/{auth,categories,expenses,insights}.ts` — typed
       request functions returning the shapes from `types.ts`.
-- [ ] `web/app/src/hooks/{useCategories,useExpenses,useInsights}.ts` —
+- [x] `web/app/src/hooks/{useCategories,useExpenses,useInsights}.ts` —
       TanStack Query wrappers. `useExpenses` is `useInfiniteQuery`.
-- [ ] `npx tsc --noEmit` passes.
-- [ ] Mark completed
+- [x] `npx tsc --noEmit` passes.
+- [x] Mark completed
 
 ### Task 7: Port shared components from the mockups
 
