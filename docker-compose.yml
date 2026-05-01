@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
+      # Persist expenses.db across rebuilds — the SQLite file lives in ./data
+      # on the host so `docker-compose up --build` does not lose user data.
       - ./data:/app/data
     ports:
       - "8080:8080"

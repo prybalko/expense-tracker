@@ -304,11 +304,14 @@ Only after Task 3 is verified working.
 
 ### Task 12: Update docker-compose.yml
 
-- [ ] In [docker-compose.yml](docker-compose.yml), add a comment that the
+- [x] In [docker-compose.yml](docker-compose.yml), add a comment that the
       `./data` volume preserves `expenses.db` across rebuilds. No structural
       change needed.
-- [ ] `docker-compose up --build` produces a working container at :8080.
-- [ ] Mark completed
+- [x] `docker-compose up --build` produces a working container at :8080.
+      (Smoke-tested: `docker-compose up -d` → `GET /` returns 200 from the
+      embedded SPA and `GET /api/categories` returns 401 without auth, as
+      expected.)
+- [x] Mark completed
 
 ### Task 13: Update .github/workflows/ci.yml
 
