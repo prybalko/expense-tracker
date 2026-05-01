@@ -18,6 +18,15 @@ const (
 	maxPageSize     = 200
 )
 
+// parseAPIDate accepts RFC3339 or the date-only "2006-01-02" form sent by the
+// PWA's date picker. The date-only form is interpreted as UTC midnight.
+func parseAPIDate(s string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	return time.Parse("2006-01-02", s)
+}
+
 type listExpensesResponse struct {
 	Items      []models.Expense `json:"items"`
 	NextCursor *string          `json:"nextCursor"`
@@ -96,9 +105,9 @@ func (s *Server) handleCreateExpense(w http.ResponseWriter, r *http.Request) {
 
 	var date time.Time
 	if req.Date != "" {
-		d, err := time.Parse(time.RFC3339, req.Date)
+		d, err := parseAPIDate(req.Date)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid date (must be RFC3339)")
+			writeError(w, http.StatusBadRequest, "invalid date (must be RFC3339 or YYYY-MM-DD)")
 			return
 		}
 		date = d
@@ -162,9 +171,9 @@ func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
 		existing.Category = *req.Category
 	}
 	if req.Date != nil {
-		d, err := time.Parse(time.RFC3339, *req.Date)
+		d, err := parseAPIDate(*req.Date)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid date (must be RFC3339)")
+			writeError(w, http.StatusBadRequest, "invalid date (must be RFC3339 or YYYY-MM-DD)")
 			return
 		}
 		existing.Date = d

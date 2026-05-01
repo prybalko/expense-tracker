@@ -40,3 +40,24 @@ func TestSPAHandler_ServesEmbeddedIndex(t *testing.T) {
 		})
 	}
 }
+
+func TestSPAHandler_MissingAssetReturns404(t *testing.T) {
+	h, err := newSPAHandler(web.DistFS)
+	require.NoError(t, err)
+
+	// Hashed-asset-style URLs that don't exist must NOT receive the index
+	// HTML — otherwise the browser tries to parse HTML as JavaScript/CSS.
+	cases := []string{
+		"/assets/index-abc12345.js",
+		"/assets/styles-deadbeef.css",
+	}
+	for _, p := range cases {
+		t.Run(p, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, p, http.NoBody)
+			req.Header.Set("Accept", "*/*")
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusNotFound, w.Code)
+		})
+	}
+}

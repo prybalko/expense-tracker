@@ -83,6 +83,13 @@ export function CategoryGlyph({ slug, size = 18 }: Props) {
           <path d="M6 8v8M9 6v12M15 6v12M18 8v8M2 12h2M20 12h2M9 12h6" />
         </svg>
       );
+    case "entertainment":
+      return (
+        <svg viewBox="0 0 24 24" style={style}>
+          <rect x="3" y="6" width="18" height="12" rx="2" />
+          <path d="M10 10l5 2.5L10 15z" fill="currentColor" stroke="none" />
+        </svg>
+      );
     case "pets":
       return (
         <svg viewBox="0 0 24 24" style={style}>

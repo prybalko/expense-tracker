@@ -53,6 +53,7 @@ export const linen: Theme = {
     utilities: { bg: "#E5D6EA", ink: "#3E1F66" },
     gifts: { bg: "#F1D6DD", ink: "#612434" },
     fitness: { bg: "#D4E4D6", ink: "#214A2D" },
+    entertainment: { bg: "#E0D6EE", ink: "#3D205C" },
     pets: { bg: "#EDDCC4", ink: "#5A3A18" },
     subs: { bg: "#DCDDEE", ink: "#2A2D5C" },
     kids: { bg: "#F0E5C9", ink: "#5A4218" },

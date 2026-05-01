@@ -130,6 +130,14 @@ func TestHandleCreateExpense(t *testing.T) {
 			wantStatus: http.StatusCreated,
 		},
 		{
+			name: "date-only YYYY-MM-DD is accepted",
+			body: map[string]any{
+				"amount": 5, "description": "x", "category": "Other",
+				"date": "2026-04-15",
+			},
+			wantStatus: http.StatusCreated,
+		},
+		{
 			name:       "amount must be positive",
 			body:       map[string]any{"amount": 0, "category": "Other"},
 			wantStatus: http.StatusBadRequest,

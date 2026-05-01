@@ -148,10 +148,18 @@ export function useCreateExpense(): CreateExpenseMutation {
           ),
         };
       });
-      const queueId = await enqueueWrite({
-        op: "create",
-        payload: { ...input, tempId },
-      });
+      let queueId: number;
+      try {
+        queueId = await enqueueWrite({
+          op: "create",
+          payload: { ...input, tempId },
+        });
+      } catch (err) {
+        // IDB unavailable — restore the optimistic state and rethrow so the
+        // mutation falls into onError with no context (we're returning early).
+        qc.setQueryData<ExpensesData>(expensesQueryKey, previous);
+        throw err;
+      }
       return { tempId, queueId, previous };
     },
     mutationFn: async (input) => {
@@ -205,10 +213,16 @@ export function useUpdateExpense(): UpdateExpenseMutation {
           ),
         ),
       );
-      const queueId = await enqueueWrite({
-        op: "update",
-        payload: { id, patch },
-      });
+      let queueId: number;
+      try {
+        queueId = await enqueueWrite({
+          op: "update",
+          payload: { id, patch },
+        });
+      } catch (err) {
+        qc.setQueryData<ExpensesData>(expensesQueryKey, previous);
+        throw err;
+      }
       return { queueId, previous };
     },
     mutationFn: async ({ id, patch }) => {
@@ -245,10 +259,16 @@ export function useDeleteExpense(): DeleteExpenseMutation {
       qc.setQueryData<ExpensesData>(expensesQueryKey, (old) =>
         mapPages(old, (items) => items.filter((e) => e.id !== id)),
       );
-      const queueId = await enqueueWrite({
-        op: "delete",
-        payload: { id },
-      });
+      let queueId: number;
+      try {
+        queueId = await enqueueWrite({
+          op: "delete",
+          payload: { id },
+        });
+      } catch (err) {
+        qc.setQueryData<ExpensesData>(expensesQueryKey, previous);
+        throw err;
+      }
       return { queueId, previous };
     },
     mutationFn: async (id) => {

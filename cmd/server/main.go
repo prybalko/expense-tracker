@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"embed"
-	"errors"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"strings"
 	"syscall"
 	"time"
@@ -86,25 +86,39 @@ func newSPAHandler(distFS embed.FS) (http.Handler, error) {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/")
-		if path == "" {
+		urlPath := strings.TrimPrefix(r.URL.Path, "/")
+		if urlPath == "" {
 			serveIndex(w)
 			return
 		}
 
-		f, err := sub.Open(path)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				serveIndex(w)
-				return
-			}
-			http.Error(w, "internal error", http.StatusInternalServerError)
+		f, err := sub.Open(urlPath)
+		if err == nil {
+			_ = f.Close()
+			fileServer.ServeHTTP(w, r)
 			return
 		}
-		_ = f.Close()
 
-		fileServer.ServeHTTP(w, r)
+		// Only fall back to index.html for navigation-style requests so that
+		// missing hashed assets (e.g. /assets/index-abc.js after a deploy)
+		// return a real 404 rather than HTML masquerading as JavaScript.
+		if isNavigationRequest(r, urlPath) {
+			serveIndex(w)
+			return
+		}
+		http.NotFound(w, r)
 	}), nil
+}
+
+func isNavigationRequest(r *http.Request, urlPath string) bool {
+	if ext := path.Ext(urlPath); ext != "" && ext != ".html" {
+		return false
+	}
+	accept := r.Header.Get("Accept")
+	if accept == "" {
+		return true
+	}
+	return strings.Contains(accept, "text/html") || strings.Contains(accept, "*/*")
 }
 
 func main() {

@@ -32,25 +32,38 @@ export async function queueSize(): Promise<number> {
   return await db.count(QUEUED_WRITES);
 }
 
-export type DrainResult = { processed: number; failed: number };
+export type DrainOutcome = "ok" | "drop" | "retry";
+export type DrainResult = { processed: number; dropped: number; failed: number };
 
 export async function drainQueue(
-  processOne: (entry: QueuedWrite) => Promise<void>,
+  processOne: (entry: QueuedWrite) => Promise<DrainOutcome>,
 ): Promise<DrainResult> {
   const items = await listQueued();
   let processed = 0;
+  let dropped = 0;
   let failed = 0;
   for (const entry of items) {
+    let outcome: DrainOutcome;
     try {
-      await processOne(entry);
-      if (entry.id !== undefined) {
-        await removeQueued(entry.id);
-      }
-      processed++;
+      outcome = await processOne(entry);
     } catch {
+      // Unexpected throw from the callback — treat as transient.
+      outcome = "retry";
+    }
+    if (outcome === "retry") {
+      // Network or transient failure — stop here so the next online tick
+      // picks up where we left off, preserving order.
       failed++;
       break;
     }
+    if (entry.id !== undefined) {
+      await removeQueued(entry.id);
+    }
+    if (outcome === "drop") {
+      dropped++;
+    } else {
+      processed++;
+    }
   }
-  return { processed, failed };
+  return { processed, dropped, failed };
 }

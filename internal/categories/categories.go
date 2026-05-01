@@ -18,7 +18,7 @@ var all = []Category{
 	{Label: "Utilities", Slug: "utilities"},
 	{Label: "Sport", Slug: "fitness"},
 	{Label: "Health", Slug: "health"},
-	{Label: "Entertainment", Slug: "other"},
+	{Label: "Entertainment", Slug: "entertainment"},
 	{Label: "Travel", Slug: "travel"},
 	{Label: "Gifts", Slug: "gifts"},
 	{Label: "Other", Slug: "other"},
