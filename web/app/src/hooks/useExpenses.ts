@@ -183,6 +183,11 @@ export function useCreateExpense(): CreateExpenseMutation {
         await dropQueued(ctx.queueId);
         await qc.invalidateQueries({ queryKey: expensesQueryKey });
         await qc.invalidateQueries({ queryKey: ["insights"] });
+      } else if (ctx.queueId === null) {
+        // Network failed AND the offline queue refused the write (IDB
+        // unavailable). The optimistic row has nowhere to be persisted —
+        // roll back so the user can see and retry.
+        qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
       }
     },
     onError: async (_err, _vars, ctx) => {
@@ -245,6 +250,9 @@ export function useUpdateExpense(): UpdateExpenseMutation {
         await dropQueued(ctx.queueId);
         await qc.invalidateQueries({ queryKey: expensesQueryKey });
         await qc.invalidateQueries({ queryKey: ["insights"] });
+      } else if (ctx.queueId === null) {
+        // Same recovery as create: no offline queue + no network = roll back.
+        qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
       }
     },
     onError: async (_err, _vars, ctx) => {
@@ -291,6 +299,9 @@ export function useDeleteExpense(): DeleteExpenseMutation {
         await dropQueued(ctx.queueId);
         await qc.invalidateQueries({ queryKey: expensesQueryKey });
         await qc.invalidateQueries({ queryKey: ["insights"] });
+      } else if (ctx.queueId === null) {
+        // Same recovery as create: no offline queue + no network = roll back.
+        qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
       }
     },
     onError: async (_err, _vars, ctx) => {

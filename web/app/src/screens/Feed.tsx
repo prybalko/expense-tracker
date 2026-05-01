@@ -155,7 +155,14 @@ export function Feed() {
                 label={dayLabel(day, today)}
                 items={items}
                 slugFor={slugFor}
-                onItemClick={(e) => navigate(`/edit/${e.id}`)}
+                onItemClick={(e) => {
+                  // Optimistic temp rows have negative ids and no server-side
+                  // record yet — opening the edit form for them would route to
+                  // /edit/-1 and the API rejects id <= 0. Wait for the create
+                  // to land before allowing edits.
+                  if (e.id < 0) return;
+                  navigate(`/edit/${e.id}`);
+                }}
               />
             ))
           )}

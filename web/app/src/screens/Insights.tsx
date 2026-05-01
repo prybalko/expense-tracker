@@ -53,20 +53,29 @@ export function Insights() {
   const cats = data?.categories ?? [];
 
   const todayDay = today.getDate();
-  const isCurrent = data?.isCurrentPeriod ?? false;
+  // Derive period navigation state from the local `period` rather than the
+  // server response: when the query is still loading, `data` reflects the
+  // *previous* period, so trusting `data.isCurrentPeriod` lets a fast
+  // re-click step past today into a future month.
+  const isCurrent =
+    period.year === today.getFullYear() &&
+    period.month === today.getMonth() + 1;
 
-  const prevMonthName =
-    data && typeof data.prevMonth === "number"
-      ? MONTH_NAMES[(data.prevMonth - 1 + 12) % 12]
-      : "";
+  const prevPeriod =
+    period.month === 1
+      ? { year: period.year - 1, month: 12 }
+      : { year: period.year, month: period.month - 1 };
+  const nextPeriod =
+    period.month === 12
+      ? { year: period.year + 1, month: 1 }
+      : { year: period.year, month: period.month + 1 };
 
-  const goPrev = () => {
-    if (!data) return;
-    setPeriod({ year: data.prevYear, month: data.prevMonth });
-  };
+  const prevMonthName = MONTH_NAMES[prevPeriod.month - 1] ?? "";
+
+  const goPrev = () => setPeriod(prevPeriod);
   const goNext = () => {
-    if (!data) return;
-    setPeriod({ year: data.nextYear, month: data.nextMonth });
+    if (isCurrent) return;
+    setPeriod(nextPeriod);
   };
 
   return (
@@ -176,11 +185,7 @@ export function Insights() {
                 {data.isIncrease ? "↑" : "↓"}{" "}
                 {Math.abs(data.percentageChange).toFixed(0)}% vs {prevMonthName}
               </div>
-            ) : (
-              <div style={{ fontSize: 12, marginTop: 4, opacity: 0.6 }}>
-                {prevMonthName ? `vs ${prevMonthName}` : ""}
-              </div>
-            )}
+            ) : null}
           </div>
           <div
             style={{

@@ -1,10 +1,8 @@
 import { openDB, type IDBPDatabase } from "idb";
-import type { Expense } from "../types";
 
 export const DB_NAME = "expense-tracker";
 export const DB_VERSION = 1;
 export const QUEUED_WRITES = "queued_writes";
-export const CACHED_EXPENSES = "cached_expenses";
 
 export type WriteOp = "create" | "update" | "delete";
 
@@ -50,36 +48,8 @@ export function getDB(): Promise<IDBPDatabase> {
             autoIncrement: true,
           });
         }
-        if (!db.objectStoreNames.contains(CACHED_EXPENSES)) {
-          db.createObjectStore(CACHED_EXPENSES, { keyPath: "id" });
-        }
       },
     });
   }
   return _dbPromise;
-}
-
-export async function cacheExpenses(items: Expense[], cap = 200): Promise<void> {
-  try {
-    const db = await getDB();
-    const tx = db.transaction(CACHED_EXPENSES, "readwrite");
-    const limited = items.slice(0, cap);
-    await tx.store.clear();
-    for (const item of limited) {
-      await tx.store.put(item);
-    }
-    await tx.done;
-  } catch {
-    // ignore cache failures
-  }
-}
-
-export async function readCachedExpenses(): Promise<Expense[]> {
-  try {
-    const db = await getDB();
-    const all = (await db.getAll(CACHED_EXPENSES)) as Expense[];
-    return all.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  } catch {
-    return [];
-  }
 }
