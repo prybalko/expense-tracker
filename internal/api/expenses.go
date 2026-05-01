@@ -15,8 +15,6 @@ import (
 )
 
 const (
-	defaultPageSize = 50
-	maxPageSize     = 200
 	// Caps on free-text fields to keep stored rows and the unique-index
 	// (date, amount, description) bounded. The PWA's notes field is a
 	// short caption — 200 chars is generous. The category is a freeform
@@ -36,40 +34,12 @@ func parseAPIDate(s string) (time.Time, error) {
 	return time.Parse("2006-01-02", s)
 }
 
+// listExpensesResponse intentionally keeps `nextCursor` as a permanent null
+// so the TypeScript client's ExpensePage type doesn't churn during the move
+// off pagination. The field exists, the value is always null.
 type listExpensesResponse struct {
 	Items      []models.Expense `json:"items"`
 	NextCursor *string          `json:"nextCursor"`
-}
-
-// encodeCursor builds an opaque cursor that pins the next page to a specific
-// (date, id) pair. Encoding both halves means the next request doesn't need
-// the anchor row to still exist, so a deleted anchor can't silently truncate
-// the rest of the list. Edits that move the anchor's date are not fully
-// handled — this is the standard keyset-pagination tradeoff: an anchor whose
-// date is shifted earlier may reappear on the next page, and one shifted
-// later may be skipped (it was already returned on the previous page).
-func encodeCursor(e models.Expense) string {
-	return strconv.FormatInt(e.Date.UnixNano(), 10) + ":" + strconv.FormatInt(e.ID, 10)
-}
-
-// decodeCursor parses a cursor produced by encodeCursor.
-func decodeCursor(s string) (time.Time, int64, error) {
-	if s == "" {
-		return time.Time{}, 0, nil
-	}
-	left, right, ok := strings.Cut(s, ":")
-	if !ok {
-		return time.Time{}, 0, errors.New("invalid cursor")
-	}
-	nanos, err := strconv.ParseInt(left, 10, 64)
-	if err != nil {
-		return time.Time{}, 0, errors.New("invalid cursor")
-	}
-	id, err := strconv.ParseInt(right, 10, 64)
-	if err != nil || id <= 0 {
-		return time.Time{}, 0, errors.New("invalid cursor")
-	}
-	return time.Unix(0, nanos).UTC(), id, nil
 }
 
 func (s *Server) handleGetExpense(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +66,10 @@ func (s *Server) handleGetExpense(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, exp)
 }
 
+// handleListExpenses returns every expense owned by the authenticated user.
+// The client caches the array under a single React Query key and derives
+// Feed, Insights, and CategoryDetails views from it locally, so this
+// endpoint takes no filter / pagination parameters by design.
 func (s *Server) handleListExpenses(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -103,89 +77,16 @@ func (s *Server) handleListExpenses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Per-category month drill-down: when year, month, and category are all
-	// supplied, return the unpaginated month×category slice. The result set
-	// for one user × one month × one category is bounded enough to skip
-	// cursor pagination entirely.
-	yearParam := r.URL.Query().Get("year")
-	monthParam := r.URL.Query().Get("month")
-	categoryParam := strings.TrimSpace(r.URL.Query().Get("category"))
-	if yearParam != "" || monthParam != "" || categoryParam != "" {
-		if yearParam == "" || monthParam == "" || categoryParam == "" {
-			writeError(w, http.StatusBadRequest, "year, month, and category must be provided together")
-			return
-		}
-		year, err := strconv.Atoi(yearParam)
-		if err != nil || year <= 0 {
-			writeError(w, http.StatusBadRequest, "invalid year")
-			return
-		}
-		month, err := strconv.Atoi(monthParam)
-		if err != nil || month < 1 || month > 12 {
-			writeError(w, http.StatusBadRequest, "invalid month (1-12)")
-			return
-		}
-		if len(categoryParam) > maxCategoryLength {
-			writeError(w, http.StatusBadRequest, "category is too long")
-			return
-		}
-		items, err := s.db.ListExpensesByMonthCategory(user.ID, year, month, categoryParam)
-		if err != nil {
-			log.Printf("api: list expenses by month/category: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-		if items == nil {
-			items = []models.Expense{}
-		}
-		writeJSON(w, http.StatusOK, listExpensesResponse{Items: items, NextCursor: nil})
-		return
-	}
-
-	limit := defaultPageSize
-	if v := r.URL.Query().Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n <= 0 {
-			writeError(w, http.StatusBadRequest, "invalid limit")
-			return
-		}
-		if n > maxPageSize {
-			n = maxPageSize
-		}
-		limit = n
-	}
-
-	var (
-		beforeDate time.Time
-		beforeID   int64
-	)
-	if v := r.URL.Query().Get("before"); v != "" {
-		d, id, err := decodeCursor(v)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid 'before' cursor")
-			return
-		}
-		beforeDate = d
-		beforeID = id
-	}
-
-	items, err := s.db.ListExpensesBefore(user.ID, limit+1, beforeDate, beforeID)
+	items, err := s.db.ListExpensesAll(user.ID)
 	if err != nil {
 		log.Printf("api: list expenses: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-
-	var nextCursor *string
-	if len(items) > limit {
-		items = items[:limit]
-		c := encodeCursor(items[len(items)-1])
-		nextCursor = &c
-	}
 	if items == nil {
 		items = []models.Expense{}
 	}
-	writeJSON(w, http.StatusOK, listExpensesResponse{Items: items, NextCursor: nextCursor})
+	writeJSON(w, http.StatusOK, listExpensesResponse{Items: items, NextCursor: nil})
 }
 
 type createExpenseRequest struct {

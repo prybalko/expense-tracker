@@ -35,7 +35,6 @@ func NewRouter(db *storage.DB, secureCookie bool) http.Handler {
 	mux.Handle("POST /api/expenses", protected(s.handleCreateExpense))
 	mux.Handle("PATCH /api/expenses/{id}", protected(s.handleUpdateExpense))
 	mux.Handle("DELETE /api/expenses/{id}", protected(s.handleDeleteExpense))
-	mux.Handle("GET /api/insights", protected(s.handleInsights))
 
 	return mux
 }

@@ -6,29 +6,14 @@ import type {
   UpdateExpenseInput,
 } from "../types";
 
-export type ListExpensesParams = {
-  limit?: number;
-  before?: string | null;
-  // When all three are provided, the server returns the unpaginated set of
-  // expenses for that user × month × category — used by the per-category
-  // drill-down on Insights.
-  year?: number;
-  month?: number;
-  category?: string;
-};
-
-export function listExpenses(
-  params: ListExpensesParams = {},
-): Promise<ExpensePage> {
-  return request<ExpensePage>("/api/expenses", {
-    query: {
-      limit: params.limit,
-      before: params.before ?? undefined,
-      year: params.year,
-      month: params.month,
-      category: params.category,
-    },
-  });
+// listExpenses returns every expense owned by the authenticated user. The
+// server takes no filter / pagination params: the client caches the array
+// under a single React Query key and Feed / Insights / CategoryDetails all
+// derive their views from it locally. ExpensePage is preserved as the
+// response wrapper (with a permanently null nextCursor) so the type didn't
+// have to churn during the move off pagination.
+export function listExpenses(): Promise<ExpensePage> {
+  return request<ExpensePage>("/api/expenses");
 }
 
 export function getExpense(id: number): Promise<Expense> {

@@ -25,7 +25,7 @@ func TestHandleListExpenses(t *testing.T) {
 		}
 	}
 
-	t.Run("returns latest first with no cursor", func(t *testing.T) {
+	t.Run("returns every row latest first", func(t *testing.T) {
 		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses", nil))
 		rec := httptest.NewRecorder()
 		env.server.handleListExpenses(rec, req)
@@ -40,56 +40,28 @@ func TestHandleListExpenses(t *testing.T) {
 		if resp.Items[0].Description != "newest" || resp.Items[2].Description != "oldest" {
 			t.Fatalf("ordering wrong: %+v", resp.Items)
 		}
+		// nextCursor stays nil forever — kept in the response shape so the
+		// TS ExpensePage type doesn't churn during the move off pagination.
 		if resp.NextCursor != nil {
 			t.Fatalf("nextCursor: got %v want nil", *resp.NextCursor)
 		}
 	})
 
-	t.Run("paginates with limit and before", func(t *testing.T) {
-		// First page (limit=2)
-		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?limit=2", nil))
+	t.Run("ignores legacy query params", func(t *testing.T) {
+		// The handler used to interpret limit/before/year/month/category;
+		// after the all-in refactor it returns the full list regardless.
+		// A stale client sending these params should still get the full
+		// dataset back rather than an error.
+		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?limit=1&year=2026&month=1&category=Other", nil))
 		rec := httptest.NewRecorder()
 		env.server.handleListExpenses(rec, req)
-		var page1 listExpensesResponse
-		decodeBody(t, rec, &page1)
-		if len(page1.Items) != 2 {
-			t.Fatalf("page1 items: got %d want 2", len(page1.Items))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status: got %d want 200 (body=%q)", rec.Code, rec.Body.String())
 		}
-		if page1.NextCursor == nil {
-			t.Fatalf("expected nextCursor on page 1")
-		}
-		// Second page using cursor
-		req = env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?limit=2&before="+*page1.NextCursor, nil))
-		rec = httptest.NewRecorder()
-		env.server.handleListExpenses(rec, req)
-		var page2 listExpensesResponse
-		decodeBody(t, rec, &page2)
-		if len(page2.Items) != 1 {
-			t.Fatalf("page2 items: got %d want 1", len(page2.Items))
-		}
-		if page2.Items[0].Description != "oldest" {
-			t.Fatalf("page2: got %q want oldest", page2.Items[0].Description)
-		}
-		if page2.NextCursor != nil {
-			t.Fatalf("page2 nextCursor: got %v want nil", *page2.NextCursor)
-		}
-	})
-
-	t.Run("invalid cursor returns 400", func(t *testing.T) {
-		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?before=abc", nil))
-		rec := httptest.NewRecorder()
-		env.server.handleListExpenses(rec, req)
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("status: got %d want 400", rec.Code)
-		}
-	})
-
-	t.Run("invalid limit returns 400", func(t *testing.T) {
-		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?limit=-1", nil))
-		rec := httptest.NewRecorder()
-		env.server.handleListExpenses(rec, req)
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("status: got %d want 400", rec.Code)
+		var resp listExpensesResponse
+		decodeBody(t, rec, &resp)
+		if len(resp.Items) != 3 {
+			t.Fatalf("items: got %d want 3 (params should be ignored)", len(resp.Items))
 		}
 	})
 
@@ -109,82 +81,6 @@ func TestHandleListExpenses(t *testing.T) {
 		}
 		if len(resp.Items) != 0 {
 			t.Fatalf("expected 0 items, got %d", len(resp.Items))
-		}
-	})
-}
-
-func TestHandleListExpenses_MonthCategoryFilter(t *testing.T) {
-	env := newTestEnv(t)
-
-	jan := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
-	feb := time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC)
-	seed := []struct {
-		amount float64
-		desc   string
-		cat    string
-		date   time.Time
-	}{
-		{10, "bakery", "Groceries", jan},
-		{25, "supermarket", "Groceries", jan.Add(2 * time.Hour)},
-		{15, "bus", "Transport", jan},
-		{40, "feb shop", "Groceries", feb},
-	}
-	for _, e := range seed {
-		if _, err := env.db.InsertExpense(e.amount, e.desc, e.cat, e.date, env.user.ID); err != nil {
-			t.Fatalf("seed %s: %v", e.desc, err)
-		}
-	}
-
-	t.Run("filters by year/month/category", func(t *testing.T) {
-		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?year=2026&month=1&category=Groceries", nil))
-		rec := httptest.NewRecorder()
-		env.server.handleListExpenses(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status: got %d want 200 (body=%q)", rec.Code, rec.Body.String())
-		}
-		var resp listExpensesResponse
-		decodeBody(t, rec, &resp)
-		if len(resp.Items) != 2 {
-			t.Fatalf("items: got %d want 2 (%+v)", len(resp.Items), resp.Items)
-		}
-		// date DESC order
-		if resp.Items[0].Description != "supermarket" || resp.Items[1].Description != "bakery" {
-			t.Fatalf("ordering wrong: %+v", resp.Items)
-		}
-		if resp.NextCursor != nil {
-			t.Fatalf("nextCursor: got %v want nil", *resp.NextCursor)
-		}
-	})
-
-	t.Run("partial filter returns 400", func(t *testing.T) {
-		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?category=Groceries", nil))
-		rec := httptest.NewRecorder()
-		env.server.handleListExpenses(rec, req)
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("status: got %d want 400", rec.Code)
-		}
-	})
-
-	t.Run("invalid month returns 400", func(t *testing.T) {
-		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?year=2026&month=13&category=Groceries", nil))
-		rec := httptest.NewRecorder()
-		env.server.handleListExpenses(rec, req)
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("status: got %d want 400", rec.Code)
-		}
-	})
-
-	t.Run("no matches returns empty array", func(t *testing.T) {
-		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?year=2026&month=3&category=Groceries", nil))
-		rec := httptest.NewRecorder()
-		env.server.handleListExpenses(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status: got %d want 200", rec.Code)
-		}
-		var resp listExpensesResponse
-		decodeBody(t, rec, &resp)
-		if resp.Items == nil || len(resp.Items) != 0 {
-			t.Fatalf("expected empty slice, got %+v", resp.Items)
 		}
 	})
 }
@@ -326,50 +222,6 @@ func TestHandleCreateExpenseDuplicateReturns409(t *testing.T) {
 	env.server.handleCreateExpense(rec, req)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("duplicate insert: got %d want 409 (body=%q)", rec.Code, rec.Body.String())
-	}
-}
-
-func TestHandleListExpensesPaginationSurvivesAnchorDelete(t *testing.T) {
-	env := newTestEnv(t)
-	base := time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC)
-	for i, d := range []string{"oldest", "second", "third", "newest"} {
-		_, err := env.db.InsertExpense(float64((i+1)*10), d, "Other", base.Add(time.Duration(i)*time.Hour), env.user.ID)
-		if err != nil {
-			t.Fatalf("seed %s: %v", d, err)
-		}
-	}
-
-	// Page 1 with limit=2 → returns ["newest", "third"], cursor anchored on "third".
-	req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?limit=2", nil))
-	rec := httptest.NewRecorder()
-	env.server.handleListExpenses(rec, req)
-	var page1 listExpensesResponse
-	decodeBody(t, rec, &page1)
-	if len(page1.Items) != 2 || page1.NextCursor == nil {
-		t.Fatalf("page1 setup wrong: %+v", page1)
-	}
-	cursor := *page1.NextCursor
-
-	// Delete the anchor row ("third"). With the old ID-only cursor scheme the
-	// next page would silently come back empty.
-	if err := env.db.DeleteExpense(env.user.ID, page1.Items[1].ID); err != nil {
-		t.Fatalf("delete anchor: %v", err)
-	}
-
-	// Page 2 with the cached cursor must still surface "second" and "oldest".
-	req = env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?limit=2&before="+cursor, nil))
-	rec = httptest.NewRecorder()
-	env.server.handleListExpenses(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("page2 status: got %d (body=%q)", rec.Code, rec.Body.String())
-	}
-	var page2 listExpensesResponse
-	decodeBody(t, rec, &page2)
-	if len(page2.Items) != 2 {
-		t.Fatalf("page2 items: got %d want 2 (%+v)", len(page2.Items), page2.Items)
-	}
-	if page2.Items[0].Description != "second" || page2.Items[1].Description != "oldest" {
-		t.Fatalf("page2 ordering wrong: %+v", page2.Items)
 	}
 }
 
@@ -635,17 +487,16 @@ func TestExpenseEndpointsScopedToUser(t *testing.T) {
 		t.Fatalf("alice's row should still exist after bob's delete: %v", err)
 	}
 
-	// Bob's insights for the same period only see Bob's totals.
-	req = withBob(buildRequest(t, http.MethodGet, "/api/insights?view=month&year=2026&month=4", nil))
+	// Bob's list returns only Bob's row — confirms ListExpensesAll is
+	// scoped per user, so the client's all-in cache for one user can
+	// never see another user's rows.
+	req = withBob(buildRequest(t, http.MethodGet, "/api/expenses", nil))
 	rec = httptest.NewRecorder()
-	env.server.handleInsights(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("bob insights: got %d want 200 (body=%q)", rec.Code, rec.Body.String())
-	}
-	var bobInsights map[string]any
-	decodeBody(t, rec, &bobInsights)
-	if total, _ := bobInsights["total"].(float64); total != 4.50 {
-		t.Fatalf("bob insights total: got %v want 4.50 (alice's row must not leak)", bobInsights["total"])
+	env.server.handleListExpenses(rec, req)
+	var bobList listExpensesResponse
+	decodeBody(t, rec, &bobList)
+	if len(bobList.Items) != 1 || bobList.Items[0].ID != bobExp.ID {
+		t.Fatalf("bob list got %+v, want only bob's row (alice's row must not leak)", bobList.Items)
 	}
 
 	// Sanity: bob's own row is reachable to him.

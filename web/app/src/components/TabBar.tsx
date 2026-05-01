@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { theme, FONT } from "../theme";
+import { vibrate } from "../utils/haptics";
 
 export type TabId = "feed" | "insights";
 
@@ -23,7 +24,10 @@ function TabButton({ id, label, icon, current, onNavigate }: BtnProps) {
   return (
     <button
       type="button"
-      onClick={() => onNavigate(id)}
+      onClick={() => {
+        vibrate();
+        onNavigate(id);
+      }}
       style={{
         flex: 1,
         background: "transparent",
@@ -62,11 +66,12 @@ export function TabBar({ current, onNavigate, onAdd }: Props) {
       style={{
         background: t.card,
         borderTop: `1px solid ${t.rule}`,
-        padding: "6px 14px 28px",
+        padding: "6px 14px calc(6px + env(safe-area-inset-bottom))",
         display: "flex",
         alignItems: "center",
         gap: 8,
         fontFamily: FONT,
+        flexShrink: 0,
       }}
     >
       <TabButton
@@ -90,7 +95,10 @@ export function TabBar({ current, onNavigate, onAdd }: Props) {
       />
       <button
         type="button"
-        onClick={onAdd}
+        onClick={() => {
+          vibrate();
+          onAdd();
+        }}
         aria-label="Add expense"
         data-testid="fab-add"
         style={{
@@ -100,13 +108,25 @@ export function TabBar({ current, onNavigate, onAdd }: Props) {
           background: t.accent,
           color: t.accentText,
           border: 0,
-          fontSize: 28,
-          lineHeight: 1,
           cursor: "pointer",
           boxShadow: `0 8px 22px ${t.accent}66`,
+          display: "grid",
+          placeItems: "center",
+          padding: 0,
         }}
       >
-        +
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M12 5v14M5 12h14" />
+        </svg>
       </button>
       <TabButton
         id="insights"

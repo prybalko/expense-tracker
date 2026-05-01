@@ -18,7 +18,6 @@ func TestRouterRequiresAuth(t *testing.T) {
 		{"logout", http.MethodPost, "/api/auth/logout"},
 		{"list expenses", http.MethodGet, "/api/expenses"},
 		{"create expense", http.MethodPost, "/api/expenses"},
-		{"insights", http.MethodGet, "/api/insights"},
 	}
 	for _, tc := range tests {
 		t.Run("no cookie/"+tc.name, func(t *testing.T) {

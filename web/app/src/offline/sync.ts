@@ -83,8 +83,9 @@ export async function syncQueue(queryClient: QueryClient): Promise<void> {
         }
       });
       if (result.processed > 0 || result.dropped > 0) {
+        // One cache to invalidate now: every screen reads from it and
+        // re-derives Insights / CategoryDetails on next render.
         await queryClient.invalidateQueries({ queryKey: expensesQueryKey });
-        await queryClient.invalidateQueries({ queryKey: ["insights"] });
       }
     } finally {
       inFlight = null;

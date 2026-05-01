@@ -77,13 +77,11 @@ export function CategoryPicker({ value, onChange, usageCounts = {} }: Props) {
       <div
         ref={scrollerRef}
         onScroll={onScroll}
+        className="scroll-x"
         style={{
           display: "flex",
-          overflowX: "auto",
           overflowY: "hidden",
           scrollSnapType: "x mandatory",
-          WebkitOverflowScrolling: "touch",
-          scrollbarWidth: "none",
         }}
       >
         {pages.map((pageCats, pi) => (

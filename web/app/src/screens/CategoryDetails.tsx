@@ -8,10 +8,24 @@ import { theme, FONT } from "../theme";
 import { CategoryGlyph } from "../components/CategoryGlyph";
 import { DayGroup } from "../components/DayGroup";
 import { useCategoryLookup } from "../hooks/useCategoryLookup";
-import { useExpensesForCategory } from "../hooks/useExpenses";
-import { useInsights } from "../hooks/useInsights";
+import { useCategoryView } from "../hooks/useExpenses";
 import { groupByDay, dayLabel } from "../groupByDay";
 import { splitInt } from "../format";
+
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
 
 export function CategoryDetails() {
   const t = theme;
@@ -35,20 +49,25 @@ export function CategoryDetails() {
   const cat = lookup.bySlug(slug) ?? lookup.fallback;
   const tone = cat.color;
 
-  const expenses = useExpensesForCategory(year, month, cat.label);
-  const insights = useInsights({ view: "month", year, month });
-
-  const items = useMemo(
-    () => expenses.data?.items ?? [],
-    [expenses.data],
-  );
-  const total = items.reduce((s, e) => s + e.amount, 0);
-  const count = items.length;
-  const monthTotal = insights.data?.total ?? 0;
-  const pct = monthTotal > 0 ? (total / monthTotal) * 100 : 0;
+  // One selector returns all four header numbers in a single useMemo over
+  // the same array, so `pct = total / monthTotal * 100` can never flicker
+  // (no longer two independent queries resolving at different times).
+  const view = useCategoryView(year, month, cat.label);
+  const { items, total, count, pct, isLoading } = view;
 
   const grouped = useMemo(() => groupByDay(items), [items]);
   const slugFor = lookup.slugByLabel;
+
+  // Without the year, the screen says "spent this month" while showing
+  // 2024 data — actively misleading once the user can navigate years.
+  const isCurrentMonth =
+    year === today.getFullYear() && month === today.getMonth() + 1;
+  const monthName = MONTH_NAMES[month - 1] ?? "";
+  const spentLabel = isCurrentMonth
+    ? "spent this month"
+    : year === today.getFullYear()
+      ? `spent in ${monthName}`
+      : `spent in ${monthName} ${year}`;
 
   const goBack = () => {
     const params = new URLSearchParams();
@@ -66,7 +85,8 @@ export function CategoryDetails() {
     <div
       data-testid="category-details"
       style={{
-        minHeight: "100vh",
+        height: "100dvh",
+        overflow: "hidden",
         background: t.bg,
         color: t.ink,
         fontFamily: FONT,
@@ -76,10 +96,11 @@ export function CategoryDetails() {
     >
       <div
         style={{
-          padding: "20px 16px 0",
+          padding: "calc(20px + env(safe-area-inset-top)) 16px 0",
           display: "flex",
           alignItems: "center",
           gap: 12,
+          flexShrink: 0,
         }}
       >
         <button
@@ -117,7 +138,13 @@ export function CategoryDetails() {
         </span>
       </div>
 
-      <div style={{ flex: 1, padding: "14px 16px 24px" }}>
+      <div
+        className="scroll-y"
+        style={{
+          flex: 1,
+          padding: "14px 16px calc(24px + env(safe-area-inset-bottom, 0px))",
+        }}
+      >
         <div
           style={{
             background: t.card,
@@ -191,7 +218,7 @@ export function CategoryDetails() {
             </span>
           </div>
           <div style={{ fontSize: 12, color: t.ink2, marginTop: 4 }}>
-            spent this month
+            {spentLabel}
           </div>
           <div
             style={{
@@ -213,7 +240,7 @@ export function CategoryDetails() {
           </div>
         </div>
 
-        {expenses.isLoading ? (
+        {isLoading ? (
           <div
             style={{
               padding: "32px 16px",

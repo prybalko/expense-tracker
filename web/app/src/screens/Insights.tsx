@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { theme, FONT } from "../theme";
 import { TabBar } from "../components/TabBar";
 import { CategoryGlyph } from "../components/CategoryGlyph";
-import { useInsights } from "../hooks/useInsights";
+import { useInsightsFor } from "../hooks/useExpenses";
 import { useCategoryLookup } from "../hooks/useCategoryLookup";
 import { fmtEUR } from "../format";
 
@@ -38,11 +38,10 @@ export function Insights() {
     }
     return { year: today.getFullYear(), month: today.getMonth() + 1 };
   });
-  const insights = useInsights({
-    view: "month",
-    year: period.year,
-    month: period.month,
-  });
+  // Derived from the cached all-expenses array — switching months recomputes
+  // off cache instead of issuing a new request, so the totals/chart never
+  // snap back to 0 between periods.
+  const insights = useInsightsFor(period.year, period.month);
   const lookup = useCategoryLookup();
 
   const data = insights.data;
@@ -55,13 +54,13 @@ export function Insights() {
   const cats = data?.categories ?? [];
 
   const todayDay = today.getDate();
+  const todayYear = today.getFullYear();
   // Derive period navigation state from the local `period` rather than the
   // server response: when the query is still loading, `data` reflects the
   // *previous* period, so trusting `data.isCurrentPeriod` lets a fast
   // re-click step past today into a future month.
   const isCurrent =
-    period.year === today.getFullYear() &&
-    period.month === today.getMonth() + 1;
+    period.year === todayYear && period.month === today.getMonth() + 1;
 
   const prevPeriod =
     period.month === 1
@@ -74,6 +73,20 @@ export function Insights() {
 
   const prevMonthName = MONTH_NAMES[prevPeriod.month - 1] ?? "";
 
+  // Show year in labels whenever we're not in the current calendar year —
+  // without it, stepping back from January looks identical to stepping back
+  // from December (both chips just say a month name) and the user can't
+  // tell which December/November/etc. they're looking at.
+  const showYear = period.year !== todayYear;
+  const periodLabel = showYear ? `${monthLabel} ${period.year}` : monthLabel;
+  // The vs-comparison crosses a year boundary when prev's year differs
+  // from the current period's year (i.e. period is January). Show the
+  // year then so "vs December" can never mean an ambiguous December.
+  const prevLabel =
+    prevPeriod.year === period.year
+      ? prevMonthName
+      : `${prevMonthName} ${prevPeriod.year}`;
+
   const goPrev = () => setPeriod(prevPeriod);
   const goNext = () => {
     if (isCurrent) return;
@@ -83,7 +96,8 @@ export function Insights() {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        height: "100dvh",
+        overflow: "hidden",
         background: t.bg,
         color: t.ink,
         fontFamily: FONT,
@@ -91,7 +105,13 @@ export function Insights() {
         flexDirection: "column",
       }}
     >
-      <div style={{ flex: 1, padding: "12px 16px 16px" }}>
+      <div
+        className="scroll-y"
+        style={{
+          flex: 1,
+          padding: "calc(12px + env(safe-area-inset-top)) 16px 16px",
+        }}
+      >
         <div
           style={{
             padding: "6px 6px 14px",
@@ -138,7 +158,7 @@ export function Insights() {
             >
               ‹
             </button>
-            <span>{monthLabel}</span>
+            <span>{periodLabel}</span>
             <button
               type="button"
               onClick={goNext}
@@ -169,7 +189,7 @@ export function Insights() {
             }}
           >
             <div style={{ fontSize: 11, color: t.ink2, fontWeight: 500 }}>
-              Spent · {monthLabel}
+              Spent · {periodLabel}
             </div>
             <div
               style={{
@@ -184,7 +204,7 @@ export function Insights() {
             {data?.hasChange ? (
               <div style={{ fontSize: 12, color: t.ink2, marginTop: 4 }}>
                 {data.isIncrease ? "↑" : "↓"}{" "}
-                {Math.abs(data.percentageChange).toFixed(0)}% vs {prevMonthName}
+                {Math.abs(data.percentageChange).toFixed(0)}% vs {prevLabel}
               </div>
             ) : null}
           </div>

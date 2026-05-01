@@ -7,7 +7,7 @@ import { Keypad } from "../components/Keypad";
 import type { KeypadKey } from "../components/Keypad";
 import { DatePickerPill } from "../components/DatePickerPill";
 import {
-  useExpenses,
+  useAllExpenses,
   useCreateExpense,
   useUpdateExpense,
   useDeleteExpense,
@@ -158,25 +158,27 @@ function FormBody({
   const canSubmit = !!parseFloat(amt) && !submitting;
 
   return (
-    <div
-      data-testid="entry-form"
-      style={{
-        position: "relative",
-        width: "100%",
-        height: "100vh",
-        background: t.bg,
-        color: t.ink,
-        fontFamily: FONT,
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
+      <div
+        data-testid="entry-form"
+        style={{
+          position: "relative",
+          width: "100%",
+          height: "100dvh",
+          overflow: "hidden",
+          background: t.bg,
+          color: t.ink,
+          fontFamily: FONT,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
       <div
         style={{
-          padding: "20px 18px 0",
+          padding: "calc(10px + env(safe-area-inset-top)) 18px 0",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
+          flexShrink: 0,
         }}
       >
         <button
@@ -189,12 +191,25 @@ function FormBody({
             borderRadius: 18,
             background: t.card,
             border: "none",
-            fontSize: 18,
             color: t.ink,
             cursor: "pointer",
+            display: "grid",
+            placeItems: "center",
+            padding: 0,
           }}
         >
-          ×
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
         </button>
         <span style={{ fontSize: 14, fontWeight: 500 }}>
           {isEdit ? "Edit expense" : "New expense"}
@@ -236,20 +251,20 @@ function FormBody({
       </div>
 
       <div
-        style={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}
+        style={{ flex: 1, overflow: "hidden", WebkitOverflowScrolling: "touch" }}
       >
-        <div style={{ textAlign: "center", padding: "24px 0 14px" }}>
-          <div
-            style={{
-              fontSize: 11,
-              color: t.ink2,
-              fontWeight: 500,
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
-            }}
-          >
-            EUR
-          </div>
+        <div style={{ textAlign: "center", padding: "14px 0 14px" }}>
+          {/*<div*/}
+          {/*  style={{*/}
+          {/*    fontSize: 11,*/}
+          {/*    color: t.ink2,*/}
+          {/*    fontWeight: 500,*/}
+          {/*    letterSpacing: "0.04em",*/}
+          {/*    textTransform: "uppercase",*/}
+          {/*  }}*/}
+          {/*>*/}
+          {/*  EUR*/}
+          {/*</div>*/}
           <div
             data-testid="entry-amount"
             data-amount={display}
@@ -330,7 +345,7 @@ function FormBody({
                 borderRadius: 16,
                 border: "none",
                 background: t.card,
-                fontSize: 14,
+                fontSize: 16, // Font size 16px prevents iOS zooming
                 fontFamily: FONT,
                 color: t.ink,
                 outline: "none",
@@ -343,10 +358,11 @@ function FormBody({
 
       <div
         style={{
-          padding: "8px 14px 28px",
+          padding: "8px 14px calc(6px + env(safe-area-inset-bottom, 16px))",
           background: t.card,
           borderTopLeftRadius: 28,
           borderTopRightRadius: 28,
+          flexShrink: 0,
         }}
       >
         <Keypad onPress={press} />
@@ -389,9 +405,9 @@ export function EntryForm() {
   const editingId = params.id ? parseInt(params.id, 10) : null;
   const isEdit = editingId !== null && !Number.isNaN(editingId);
 
-  const expensesQuery = useExpenses(50);
+  const expensesQuery = useAllExpenses();
   const cachedExpenses = useMemo<Expense[]>(
-    () => expensesQuery.data?.pages.flatMap((p) => p.items) ?? [],
+    () => expensesQuery.data ?? [],
     [expensesQuery.data],
   );
 

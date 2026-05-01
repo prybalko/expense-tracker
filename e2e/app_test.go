@@ -50,15 +50,7 @@ func (s *E2ETestSuite) SetupTest() {
 	s.Require().NoError(err, "could not clear expenses")
 	db.Close()
 
-	// Workbox runtimeCaching uses StaleWhileRevalidate for /api/insights and
-	// /api/expenses, so a freshly-revalidating fetch hands React Query the
-	// stale body before the new one lands. The new body updates the SW cache
-	// but doesn't trigger another React Query subscriber notification, so
-	// the Hero stays on the old total. Blocking the SW per-context skips the
-	// whole layer for tests.
-	ctx, err := s.browser.NewContext(playwright.BrowserNewContextOptions{
-		ServiceWorkers: playwright.ServiceWorkerPolicyBlock,
-	})
+	ctx, err := s.browser.NewContext(playwright.BrowserNewContextOptions{})
 	s.Require().NoError(err, "could not create context")
 
 	page, err := ctx.NewPage()

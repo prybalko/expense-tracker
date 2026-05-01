@@ -129,42 +129,103 @@ func (s *ExpenseTestSuite) TestListExpenses() {
 	}
 }
 
-func (s *ExpenseTestSuite) TestListExpensesCurrentMonth() {
-	now := time.Now()
-	currentMonth := time.Date(now.Year(), now.Month(), 15, 12, 0, 0, 0, now.Location())
-	lastMonth := time.Date(now.Year(), now.Month()-1, 15, 12, 0, 0, 0, now.Location())
-	twoMonthsAgo := time.Date(now.Year(), now.Month()-2, 15, 12, 0, 0, 0, now.Location())
-
-	// Create expenses in different months
-	testExpenses := []struct {
-		amount      float64
-		description string
-		category    string
-		date        time.Time
+// TestListExpensesAll covers the API's read path: every row visible to the
+// caller, ordered by (date DESC, id DESC). Visible means owned by the caller
+// OR unowned (user_id IS NULL — the legacy bucket from before per-user
+// scoping). The client caches this array under one query key and derives
+// every screen's view locally — leaking another user's owned rows here
+// would mean they show up on the wrong account's Insights screen.
+func (s *ExpenseTestSuite) TestListExpensesAll() {
+	jan := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
+	feb := time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC)
+	seed := []struct {
+		amount   float64
+		desc     string
+		category string
+		date     time.Time
+		user     int64
 	}{
-		{100.00, "Current Month 1", "food", currentMonth},
-		{150.00, "Current Month 2", "transport", currentMonth.Add(24 * time.Hour)},
-		{200.00, "Last Month", "food", lastMonth},
-		{300.00, "Two Months Ago", "utilities", twoMonthsAgo},
+		{10.00, "Bakery", "Groceries", jan, 1},
+		{25.00, "Supermarket", "Groceries", jan.Add(2 * time.Hour), 1},
+		{40.00, "Feb shop", "Groceries", feb, 1},
+		{99.00, "Other user row", "Groceries", jan, 2},
+	}
+	for _, e := range seed {
+		_, err := s.db.InsertExpense(e.amount, e.desc, e.category, e.date, e.user)
+		s.Require().NoError(err)
 	}
 
-	for _, exp := range testExpenses {
-		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date, 1)
-		s.Require().NoError(err, "failed to create expense: %s", exp.description)
-	}
-
-	// List expenses should return all expenses (no longer filtered by month)
-	expenses, err := s.db.ListExpenses(1, 100, 0)
+	// Insert a pre-multi-user historical row directly (NULL user_id).
+	// InsertExpense always sets a user, so we go around it.
+	_, err := s.db.conn.Exec(
+		`INSERT INTO expenses (amount, description, category, date, user_id)
+		 VALUES (?, ?, ?, ?, NULL)`,
+		5.00, "Legacy coffee", "Eating Out",
+		time.Date(2018, 6, 15, 9, 0, 0, 0, time.UTC),
+	)
 	s.Require().NoError(err)
-	s.Len(expenses, 4, "expected all expenses")
 
-	// Verify the expenses are ordered by date DESC
-	if s.Len(expenses, 4) {
-		s.Equal("Current Month 2", expenses[0].Description)
-		s.InDelta(150.00, expenses[0].Amount, 0.001)
-		s.Equal("Current Month 1", expenses[1].Description)
-		s.InDelta(100.00, expenses[1].Amount, 0.001)
-	}
+	got, err := s.db.ListExpensesAll(1)
+	s.Require().NoError(err)
+	s.Require().Len(got, 4, "expected 3 owned + 1 legacy NULL row for user 1")
+	// (date DESC, id DESC) — Feb row first, then Jan rows in insert order
+	// reversed (newer id first when dates tie), then the 2018 legacy row last.
+	s.Equal("Feb shop", got[0].Description)
+	s.Equal("Supermarket", got[1].Description)
+	s.Equal("Bakery", got[2].Description)
+	s.Equal("Legacy coffee", got[3].Description)
+	s.Nil(got[3].UserID, "legacy row should still be unowned")
+
+	// User 2 sees their own row + the same legacy NULL row.
+	got2, err := s.db.ListExpensesAll(2)
+	s.Require().NoError(err)
+	s.Require().Len(got2, 2, "expected 1 owned + 1 legacy NULL row for user 2")
+	s.Equal("Other user row", got2[0].Description)
+	s.Equal("Legacy coffee", got2[1].Description)
+
+	// An unknown user still sees the unowned legacy row (it's shared);
+	// they just have nothing of their own.
+	other, err := s.db.ListExpensesAll(999)
+	s.Require().NoError(err)
+	s.Require().Len(other, 1)
+	s.Equal("Legacy coffee", other[0].Description)
+}
+
+// TestNullOwnedRowsAreEditableByAnyUser pins the policy that pre-multi-user
+// historical rows can be updated and deleted by whoever's logged in — the
+// alternative (immutable shared rows) would leave years of legacy data
+// permanently miscategorised with no way to fix it from the UI.
+func (s *ExpenseTestSuite) TestNullOwnedRowsAreEditableByAnyUser() {
+	res, err := s.db.conn.Exec(
+		`INSERT INTO expenses (amount, description, category, date, user_id)
+		 VALUES (?, ?, ?, ?, NULL)`,
+		7.50, "Old lunch", "Eating Out",
+		time.Date(2017, 4, 1, 12, 0, 0, 0, time.UTC),
+	)
+	s.Require().NoError(err)
+	id, err := res.LastInsertId()
+	s.Require().NoError(err)
+
+	// User 1 reads it.
+	got, err := s.db.GetExpense(1, id)
+	s.Require().NoError(err)
+	s.Equal("Old lunch", got.Description)
+	s.Nil(got.UserID)
+
+	// User 1 updates it; the row stays unowned afterward.
+	got.Description = "Old lunch (recategorised)"
+	got.Category = "Groceries"
+	s.Require().NoError(s.db.UpdateExpense(1, got))
+	reread, err := s.db.GetExpense(2, id)
+	s.Require().NoError(err, "user 2 should still see the legacy row")
+	s.Equal("Old lunch (recategorised)", reread.Description)
+	s.Equal("Groceries", reread.Category)
+	s.Nil(reread.UserID, "update must not silently claim a shared row")
+
+	// User 2 deletes it; gone for everyone.
+	s.Require().NoError(s.db.DeleteExpense(2, id))
+	_, err = s.db.GetExpense(1, id)
+	s.ErrorContains(err, "no rows")
 }
 
 func (s *ExpenseTestSuite) TestListExpensesPagination() {
@@ -189,273 +250,6 @@ func (s *ExpenseTestSuite) TestListExpensesPagination() {
 	expenses, err = s.db.ListExpenses(1, 10, 10)
 	s.Require().NoError(err)
 	s.Empty(expenses, "expected 0 expenses with offset beyond data")
-}
-
-func (s *ExpenseTestSuite) TestGetExpensesByMonth() {
-	// Create expenses in different months
-	jan2026 := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
-	feb2026 := time.Date(2026, 2, 15, 12, 0, 0, 0, time.UTC)
-	dec2025 := time.Date(2025, 12, 15, 12, 0, 0, 0, time.UTC)
-
-	testExpenses := []struct {
-		amount      float64
-		description string
-		category    string
-		date        time.Time
-	}{
-		{100.00, "January Expense 1", "groceries", jan2026},
-		{150.00, "January Expense 2", "transport", jan2026.Add(24 * time.Hour)},
-		{200.00, "February Expense", "eating out", feb2026},
-		{300.00, "December Expense", "utilities", dec2025},
-	}
-
-	for _, exp := range testExpenses {
-		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date, 1)
-		s.Require().NoError(err, "failed to create expense: %s", exp.description)
-	}
-
-	// Test getting January 2026 expenses
-	janExpenses, err := s.db.GetExpensesByMonth(1, 2026, 1)
-	s.Require().NoError(err)
-	s.Len(janExpenses, 2, "expected 2 expenses in January 2026")
-
-	// Verify expenses are ordered by date DESC
-	if s.Len(janExpenses, 2) {
-		s.Equal("January Expense 2", janExpenses[0].Description)
-		s.InDelta(150.00, janExpenses[0].Amount, 0.001)
-		s.Equal("January Expense 1", janExpenses[1].Description)
-		s.InDelta(100.00, janExpenses[1].Amount, 0.001)
-	}
-
-	// Test getting February 2026 expenses
-	febExpenses, err := s.db.GetExpensesByMonth(1, 2026, 2)
-	s.Require().NoError(err)
-	s.Len(febExpenses, 1, "expected 1 expense in February 2026")
-	if s.Len(febExpenses, 1) {
-		s.Equal("February Expense", febExpenses[0].Description)
-		s.InDelta(200.00, febExpenses[0].Amount, 0.001)
-	}
-
-	// Test getting December 2025 expenses
-	decExpenses, err := s.db.GetExpensesByMonth(1, 2025, 12)
-	s.Require().NoError(err)
-	s.Len(decExpenses, 1, "expected 1 expense in December 2025")
-	if s.Len(decExpenses, 1) {
-		s.Equal("December Expense", decExpenses[0].Description)
-		s.InDelta(300.00, decExpenses[0].Amount, 0.001)
-	}
-
-	// Test getting a month with no expenses
-	novExpenses, err := s.db.GetExpensesByMonth(1, 2025, 11)
-	s.Require().NoError(err)
-	s.Empty(novExpenses, "expected 0 expenses in November 2025")
-}
-
-func (s *ExpenseTestSuite) TestGetCategoryTotalsByMonth() {
-	// Create expenses in different months and categories
-	jan2026 := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
-
-	testExpenses := []struct {
-		amount      float64
-		description string
-		category    string
-		date        time.Time
-	}{
-		{100.00, "Groceries 1", "groceries", jan2026},
-		{150.00, "Groceries 2", "groceries", jan2026.Add(time.Hour)},
-		{200.00, "Bus", "transport", jan2026.Add(2 * time.Hour)},
-		{50.00, "Taxi", "transport", jan2026.Add(3 * time.Hour)},
-		{75.00, "Restaurant", "eating out", jan2026.Add(4 * time.Hour)},
-		// February expenses (should not be included)
-		{300.00, "Feb Groceries", "groceries", time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)},
-	}
-
-	for _, exp := range testExpenses {
-		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date, 1)
-		s.Require().NoError(err, "failed to create expense: %s", exp.description)
-	}
-
-	// Test getting category totals for January 2026
-	totals, err := s.db.GetCategoryTotalsByMonth(1, 2026, 1)
-	s.Require().NoError(err)
-	s.Len(totals, 3, "expected 3 categories in January 2026")
-
-	// Build a map for easier verification (since groceries and transport have same total)
-	categoryMap := make(map[string]CategoryTotal)
-	for _, ct := range totals {
-		categoryMap[ct.Category] = ct
-	}
-
-	// Verify groceries: 100 + 150 = 250
-	s.Contains(categoryMap, "groceries")
-	s.InDelta(250.00, categoryMap["groceries"].Total, 0.001)
-	s.Equal(2, categoryMap["groceries"].Count)
-
-	// Verify transport: 200 + 50 = 250
-	s.Contains(categoryMap, "transport")
-	s.InDelta(250.00, categoryMap["transport"].Total, 0.001)
-	s.Equal(2, categoryMap["transport"].Count)
-
-	// Verify eating out: 75 (should be last since it has lowest total)
-	s.Contains(categoryMap, "eating out")
-	s.InDelta(75.00, categoryMap["eating out"].Total, 0.001)
-	s.Equal(1, categoryMap["eating out"].Count)
-
-	// The last item should be eating out (lowest total)
-	s.Equal("eating out", totals[2].Category)
-
-	// Test getting category totals for February 2026
-	febTotals, err := s.db.GetCategoryTotalsByMonth(1, 2026, 2)
-	s.Require().NoError(err)
-	s.Len(febTotals, 1, "expected 1 category in February 2026")
-	if s.Len(febTotals, 1) {
-		s.Equal("groceries", febTotals[0].Category)
-		s.InDelta(300.00, febTotals[0].Total, 0.001)
-		s.Equal(1, febTotals[0].Count)
-	}
-
-	// Test getting category totals for a month with no expenses
-	novTotals, err := s.db.GetCategoryTotalsByMonth(1, 2025, 11)
-	s.Require().NoError(err)
-	s.Empty(novTotals, "expected 0 categories in November 2025")
-}
-
-func (s *ExpenseTestSuite) TestGetCategoryTotalsByMonth_SingleCategory() {
-	// Test when all expenses are in one category
-	jan2026 := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
-
-	expenses := []struct {
-		amount float64
-		desc   string
-	}{
-		{10.00, "Coffee"},
-		{20.00, "Lunch"},
-		{30.00, "Dinner"},
-	}
-
-	for _, exp := range expenses {
-		err := s.db.CreateExpense(exp.amount, exp.desc, "eating out", jan2026.Add(time.Hour), 1)
-		jan2026 = jan2026.Add(time.Hour)
-		s.Require().NoError(err)
-	}
-
-	totals, err := s.db.GetCategoryTotalsByMonth(1, 2026, 1)
-	s.Require().NoError(err)
-	s.Len(totals, 1, "expected 1 category")
-	if s.Len(totals, 1) {
-		s.Equal("eating out", totals[0].Category)
-		s.InDelta(60.00, totals[0].Total, 0.001)
-		s.Equal(3, totals[0].Count)
-	}
-}
-
-func (s *ExpenseTestSuite) TestListExpensesByMonthCategory() {
-	jan2026 := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
-	feb2026 := time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC)
-
-	testExpenses := []struct {
-		amount   float64
-		desc     string
-		category string
-		date     time.Time
-		user     int64
-	}{
-		{10.00, "Bakery", "groceries", jan2026, 1},
-		{25.00, "Supermarket", "groceries", jan2026.Add(2 * time.Hour), 1},
-		{30.00, "Bus", "transport", jan2026.Add(3 * time.Hour), 1},
-		{50.00, "Feb groceries", "groceries", feb2026, 1},
-		// Different user, same category/month should be excluded
-		{99.00, "Other user groceries", "groceries", jan2026, 2},
-	}
-	for _, exp := range testExpenses {
-		err := s.db.CreateExpense(exp.amount, exp.desc, exp.category, exp.date, exp.user)
-		s.Require().NoError(err)
-	}
-
-	got, err := s.db.ListExpensesByMonthCategory(1, 2026, 1, "groceries")
-	s.Require().NoError(err)
-	s.Require().Len(got, 2, "expected 2 January groceries for user 1")
-	// date DESC ordering
-	s.Equal("Supermarket", got[0].Description)
-	s.Equal("Bakery", got[1].Description)
-
-	// Empty result for unused category
-	empty, err := s.db.ListExpensesByMonthCategory(1, 2026, 1, "nonexistent")
-	s.Require().NoError(err)
-	s.Empty(empty)
-}
-
-func (s *ExpenseTestSuite) TestGetExpensesByMonth_EdgeCases() {
-	// Test month boundaries
-	// Last day of January
-	jan31 := time.Date(2026, 1, 31, 23, 59, 59, 0, time.UTC)
-	// First day of February
-	feb1 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
-
-	err := s.db.CreateExpense(100.00, "End of January", "groceries", jan31, 1)
-	s.Require().NoError(err)
-	err = s.db.CreateExpense(200.00, "Start of February", "groceries", feb1, 1)
-	s.Require().NoError(err)
-
-	// Get January expenses
-	janExpenses, err := s.db.GetExpensesByMonth(1, 2026, 1)
-	s.Require().NoError(err)
-	s.Len(janExpenses, 1, "expected 1 expense in January")
-	if s.Len(janExpenses, 1) {
-		s.Equal("End of January", janExpenses[0].Description)
-	}
-
-	// Get February expenses
-	febExpenses, err := s.db.GetExpensesByMonth(1, 2026, 2)
-	s.Require().NoError(err)
-	s.Len(febExpenses, 1, "expected 1 expense in February")
-	if s.Len(febExpenses, 1) {
-		s.Equal("Start of February", febExpenses[0].Description)
-	}
-}
-
-func (s *ExpenseTestSuite) TestGetTotalForRange() {
-	testExpenses := []struct {
-		amount float64
-		date   time.Time
-	}{
-		{50.00, time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC)},
-		{100.00, time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)},
-		{200.00, time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)},
-		{400.00, time.Date(2026, 3, 31, 23, 59, 59, 0, time.UTC)},
-		{800.00, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)},
-	}
-	for _, exp := range testExpenses {
-		err := s.db.CreateExpense(exp.amount, "Test", "other", exp.date, 1)
-		s.Require().NoError(err)
-	}
-
-	// Full March range: [Mar 1, Apr 1) should include all three March rows (100+200+400=700).
-	total, err := s.db.GetTotalForRange(
-		1,
-		time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
-		time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
-	)
-	s.Require().NoError(err)
-	s.InDelta(700.00, total, 0.001, "full March total")
-
-	// Start is inclusive, end is exclusive: [Mar 1, Mar 15) excludes Mar 15.
-	total, err = s.db.GetTotalForRange(
-		1,
-		time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
-		time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
-	)
-	s.Require().NoError(err)
-	s.InDelta(100.00, total, 0.001, "start inclusive, end exclusive")
-
-	// Empty range returns 0, not an error.
-	total, err = s.db.GetTotalForRange(
-		1,
-		time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
-		time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
-	)
-	s.Require().NoError(err)
-	s.InDelta(0.00, total, 0.001, "empty range")
 }
 
 // Test suite runner

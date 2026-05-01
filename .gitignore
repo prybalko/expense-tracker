@@ -1,7 +1,12 @@
 # Binaries
 main
+/server
 /dist/
 bin/
+
+# Playwright artifacts
+/web/app/playwright-report/
+/web/app/test-results/
 
 # Frontend build output (committed placeholder keeps //go:embed working)
 /web/dist/*

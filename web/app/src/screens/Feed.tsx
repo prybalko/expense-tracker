@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { theme, FONT } from "../theme";
 import { Hero } from "../components/Hero";
 import { DayGroup } from "../components/DayGroup";
 import { TabBar } from "../components/TabBar";
-import { useExpenses } from "../hooks/useExpenses";
+import { useAllExpenses, useInsightsFor } from "../hooks/useExpenses";
 import { useCategoryLookup } from "../hooks/useCategoryLookup";
-import { useInsights } from "../hooks/useInsights";
 import { dayLabel, groupByDay } from "../groupByDay";
 import type { Expense } from "../types";
 
@@ -25,38 +24,42 @@ const MONTH_NAMES = [
   "December",
 ];
 
+const PAGE = 50;
+
 export function Feed() {
   const t = theme;
   const navigate = useNavigate();
   const today = useMemo(() => new Date(), []);
-  const insights = useInsights({
-    view: "month",
-    year: today.getFullYear(),
-    month: today.getMonth() + 1,
-  });
-  const expenses = useExpenses(50);
+  const insights = useInsightsFor(today.getFullYear(), today.getMonth() + 1);
+  const expenses = useAllExpenses();
   const lookup = useCategoryLookup();
   const slugFor = lookup.slugByLabel;
 
-  const allItems: Expense[] = useMemo(
-    () => expenses.data?.pages.flatMap((p) => p.items) ?? [],
+  // Windowed render: bump `visible` as the sentinel scrolls into view.
+  // Replaces the old useInfiniteQuery + cursor pagination — the data is
+  // already fully in memory once the all-expenses query lands, so all we
+  // need here is a slice + a counter.
+  const [visible, setVisible] = useState(PAGE);
+  const allItems = useMemo<Expense[]>(
+    () => expenses.data ?? [],
     [expenses.data],
   );
-  const grouped = useMemo(() => groupByDay(allItems), [allItems]);
+  const visibleItems = useMemo(
+    () => allItems.slice(0, visible),
+    [allItems, visible],
+  );
+  const grouped = useMemo(() => groupByDay(visibleItems), [visibleItems]);
+  const hasMore = visible < allItems.length;
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const hasNextPage = expenses.hasNextPage;
-  const isFetchingNextPage = expenses.isFetchingNextPage;
-  const fetchNextPage = expenses.fetchNextPage;
   useEffect(() => {
     const el = sentinelRef.current;
-    if (!el) return;
-    if (!hasNextPage) return;
+    if (!el || !hasMore) return;
     const obs = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting && !isFetchingNextPage) {
-            fetchNextPage();
+          if (entry.isIntersecting) {
+            setVisible((v) => v + PAGE);
           }
         }
       },
@@ -64,7 +67,7 @@ export function Feed() {
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [hasMore]);
 
   const heroMonth =
     insights.data?.monthName ?? MONTH_NAMES[today.getMonth()] ?? "";
@@ -78,7 +81,8 @@ export function Feed() {
     <div
       data-testid="feed-screen"
       style={{
-        minHeight: "100vh",
+        height: "100dvh",
+        overflow: "hidden",
         background: t.bg,
         color: t.ink,
         fontFamily: FONT,
@@ -86,7 +90,13 @@ export function Feed() {
         flexDirection: "column",
       }}
     >
-      <div style={{ flex: 1, padding: "12px 16px 12px" }}>
+      <div
+        className="scroll-y"
+        style={{
+          flex: 1,
+          padding: "calc(12px + env(safe-area-inset-top)) 16px 12px",
+        }}
+      >
         <Hero
           monthName={heroMonth}
           total={heroTotal}
@@ -137,18 +147,6 @@ export function Feed() {
             ))
           )}
           <div ref={sentinelRef} style={{ height: 1 }} />
-          {expenses.isFetchingNextPage ? (
-            <div
-              style={{
-                padding: "16px",
-                textAlign: "center",
-                color: t.ink2,
-                fontSize: 12,
-              }}
-            >
-              Loading more...
-            </div>
-          ) : null}
         </div>
       </div>
       <TabBar

@@ -109,7 +109,9 @@ export function Login() {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        height: "100dvh",
+        overflow: "auto",
+        WebkitOverflowScrolling: "touch",
         background: t.bg,
         color: t.ink,
         fontFamily: FONT,
@@ -173,7 +175,7 @@ export function Login() {
               border: "none",
               background: t.cardAlt,
               color: t.ink,
-              fontSize: 15,
+              fontSize: 16,
               fontFamily: FONT,
               outline: "none",
               boxSizing: "border-box",
@@ -207,7 +209,7 @@ export function Login() {
               border: "none",
               background: t.cardAlt,
               color: t.ink,
-              fontSize: 15,
+              fontSize: 16,
               fontFamily: FONT,
               outline: "none",
               boxSizing: "border-box",

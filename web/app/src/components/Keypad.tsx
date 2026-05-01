@@ -1,4 +1,5 @@
 import { theme, FONT } from "../theme";
+import { vibrate } from "../utils/haptics";
 
 export type KeypadKey =
   | "0"
@@ -48,7 +49,10 @@ export function Keypad({ onPress }: Props) {
         <button
           key={k}
           type="button"
-          onClick={() => onPress(k)}
+          onClick={() => {
+            vibrate();
+            onPress(k);
+          }}
           data-testid={`keypad-${k === "." ? "dot" : k}`}
           style={{
             padding: "12px 0",

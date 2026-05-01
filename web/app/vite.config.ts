@@ -8,6 +8,10 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      manifestFilename: 'manifest.json',
+      devOptions: {
+        enabled: true,
+      },
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Expenses',
@@ -40,7 +44,7 @@ export default defineConfig({
           {
             urlPattern: /\/api\/expenses(\?.*)?$/,
             method: 'GET',
-            handler: 'StaleWhileRevalidate',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'api-expenses',
               expiration: { maxEntries: 50 },
@@ -49,17 +53,11 @@ export default defineConfig({
           {
             urlPattern: /\/api\/expenses\/\d+$/,
             method: 'GET',
-            handler: 'StaleWhileRevalidate',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'api-expense-detail',
               expiration: { maxEntries: 100 },
             },
-          },
-          {
-            urlPattern: /\/api\/insights(\?.*)?$/,
-            method: 'GET',
-            handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'api-insights' },
           },
           {
             urlPattern: /\/api\/expenses(\/.*)?$/,

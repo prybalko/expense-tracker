@@ -1,9 +1,8 @@
+import { useMemo } from "react";
 import {
-  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
-  type InfiniteData,
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
@@ -12,56 +11,95 @@ import {
   deleteExpense,
   listExpenses,
   updateExpense,
-  type ListExpensesParams,
 } from "../api/expenses";
 import { ApiError } from "../api/client";
 import type {
   CreateExpenseInput,
   Expense,
-  ExpensePage,
+  Insights,
   UpdateExpenseInput,
 } from "../types";
 import { enqueueWrite, removeQueued } from "../offline/queue";
+import { deriveInsights, expensesForCategory } from "../insights/derive";
 
+// Single canonical cache for every read in the app. Feed shows a windowed
+// slice of this array; Insights and CategoryDetails derive their views via
+// useMemo selectors. There is no separate insights cache, so mutations only
+// touch this one key — and screens never coordinate two queries that
+// resolve at different times (the source of the old "number jumps" UX).
 export const expensesQueryKey = ["expenses"] as const;
 
-type ExpensesData = InfiniteData<ExpensePage, string | null>;
-
-export function useExpenses(limit?: number) {
-  return useInfiniteQuery<
-    ExpensePage,
-    Error,
-    ExpensesData,
-    typeof expensesQueryKey,
-    string | null
-  >({
+export function useAllExpenses(): UseQueryResult<Expense[], Error> {
+  return useQuery<Expense[], Error>({
     queryKey: expensesQueryKey,
-    initialPageParam: null,
-    queryFn: ({ pageParam }) => {
-      const params: ListExpensesParams = { limit };
-      if (pageParam) {
-        params.before = pageParam;
-      }
-      return listExpenses(params);
+    queryFn: async () => {
+      const page = await listExpenses();
+      return page.items;
     },
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    // Mutations explicitly invalidate this key after a successful write, so
+    // we can treat the cached array as fresh between writes. Without this,
+    // every screen mount on the Feed → Insights → CategoryDetails path would
+    // refetch the full list and bring back the "loading flash" we just
+    // removed.
+    staleTime: 5 * 60 * 1000,
   });
 }
 
-// Per-category drill-down on Insights: returns the unpaginated list of
-// expenses for the given user × month × category. The cache key starts with
-// `expenses` so it's invalidated alongside the main feed by create/update/
-// delete mutations (TanStack's invalidateQueries does prefix matching).
-export function useExpensesForCategory(
+// useInsightsFor reproduces the shape the deleted /api/insights endpoint
+// used to return, derived in O(n) from the cached array. Switching months
+// on the Insights screen recomputes from cache — zero network, zero
+// loading state — so the rendered totals never snap back to 0 between
+// query keys.
+export function useInsightsFor(
   year: number,
   month: number,
-  category: string,
-): UseQueryResult<ExpensePage, Error> {
-  return useQuery<ExpensePage, Error>({
-    queryKey: ["expenses", "by-category", year, month, category],
-    queryFn: () => listExpenses({ year, month, category }),
-    enabled: Boolean(category) && year > 0 && month >= 1 && month <= 12,
-  });
+): { data: Insights | undefined; isLoading: boolean } {
+  const query = useAllExpenses();
+  const data = useMemo(() => {
+    if (!query.data) return undefined;
+    return deriveInsights(query.data, year, month, new Date());
+  }, [query.data, year, month]);
+  return { data, isLoading: query.isLoading };
+}
+
+// useCategoryView returns CategoryDetails' four header numbers from a
+// single useMemo over one array on one render — `pct` can never flicker
+// because the numerator (filtered total) and denominator (month total)
+// are computed in the same pass.
+export function useCategoryView(
+  year: number,
+  month: number,
+  label: string,
+): {
+  items: Expense[];
+  total: number;
+  count: number;
+  monthTotal: number;
+  pct: number;
+  isLoading: boolean;
+} {
+  const query = useAllExpenses();
+  const view = useMemo(() => {
+    const all = query.data ?? [];
+    const items = expensesForCategory(all, year, month, label);
+    let total = 0;
+    for (const e of items) total += e.amount;
+    let monthTotal = 0;
+    for (const e of all) {
+      const ymd = e.date;
+      if (
+        ymd &&
+        ymd.length >= 10 &&
+        parseInt(ymd.slice(0, 4), 10) === year &&
+        parseInt(ymd.slice(5, 7), 10) === month
+      ) {
+        monthTotal += e.amount;
+      }
+    }
+    const pct = monthTotal > 0 ? (total / monthTotal) * 100 : 0;
+    return { items, total, count: items.length, monthTotal, pct };
+  }, [query.data, year, month, label]);
+  return { ...view, isLoading: query.isLoading };
 }
 
 let _tempIdCounter = -1;
@@ -85,31 +123,20 @@ function todayIso(): string {
   return `${y}-${m}-${day}`;
 }
 
-function mapPages(
-  data: ExpensesData | undefined,
-  fn: (items: Expense[]) => Expense[],
-): ExpensesData | undefined {
-  if (!data) return data;
-  return {
-    ...data,
-    pages: data.pages.map((p) => ({ ...p, items: fn(p.items) })),
-  };
-}
-
 type CreateContext = {
   tempId: number;
   queueId: number | null;
-  previous: ExpensesData | undefined;
+  previous: Expense[] | undefined;
 };
 
 type UpdateContext = {
   queueId: number | null;
-  previous: ExpensesData | undefined;
+  previous: Expense[] | undefined;
 };
 
 type DeleteContext = {
   queueId: number | null;
-  previous: ExpensesData | undefined;
+  previous: Expense[] | undefined;
 };
 
 async function dropQueued(queueId: number | null): Promise<void> {
@@ -144,16 +171,11 @@ export type DeleteExpenseMutation = UseMutationResult<
 
 export function useCreateExpense(): CreateExpenseMutation {
   const qc = useQueryClient();
-  return useMutation<
-    Expense | null,
-    Error,
-    CreateExpenseInput,
-    CreateContext
-  >({
+  return useMutation<Expense | null, Error, CreateExpenseInput, CreateContext>({
     mutationKey: ["expenses", "create"],
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: expensesQueryKey });
-      const previous = qc.getQueryData<ExpensesData>(expensesQueryKey);
+      const previous = qc.getQueryData<Expense[]>(expensesQueryKey);
       const tempId = nextTempId();
       const optimistic: Expense = {
         id: tempId,
@@ -162,20 +184,9 @@ export function useCreateExpense(): CreateExpenseMutation {
         category: input.category,
         date: input.date ?? todayIso(),
       };
-      qc.setQueryData<ExpensesData>(expensesQueryKey, (old) => {
-        if (!old) {
-          return {
-            pages: [{ items: [optimistic], nextCursor: null }],
-            pageParams: [null],
-          };
-        }
-        return {
-          ...old,
-          pages: old.pages.map((p, i) =>
-            i === 0 ? { ...p, items: [optimistic, ...p.items] } : p,
-          ),
-        };
-      });
+      qc.setQueryData<Expense[]>(expensesQueryKey, (old) =>
+        old ? [optimistic, ...old] : [optimistic],
+      );
       let queueId: number | null = null;
       try {
         queueId = await enqueueWrite({
@@ -201,12 +212,11 @@ export function useCreateExpense(): CreateExpenseMutation {
       if (result) {
         await dropQueued(ctx.queueId);
         await qc.invalidateQueries({ queryKey: expensesQueryKey });
-        await qc.invalidateQueries({ queryKey: ["insights"] });
       } else if (ctx.queueId === null) {
         // Network failed AND the offline queue refused the write (IDB
         // unavailable). The optimistic row has nowhere to be persisted —
         // roll back so the user can see and retry.
-        qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
+        qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
       }
     },
     onError: async (err, _vars, ctx) => {
@@ -220,11 +230,10 @@ export function useCreateExpense(): CreateExpenseMutation {
         // we'd hide a row the user really did add.
         await dropQueued(ctx.queueId);
         await qc.invalidateQueries({ queryKey: expensesQueryKey });
-        await qc.invalidateQueries({ queryKey: ["insights"] });
         return;
       }
       await dropQueued(ctx.queueId);
-      qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
+      qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
     },
   });
 }
@@ -240,20 +249,18 @@ export function useUpdateExpense(): UpdateExpenseMutation {
     mutationKey: ["expenses", "update"],
     onMutate: async ({ id, patch }) => {
       await qc.cancelQueries({ queryKey: expensesQueryKey });
-      const previous = qc.getQueryData<ExpensesData>(expensesQueryKey);
-      qc.setQueryData<ExpensesData>(expensesQueryKey, (old) =>
-        mapPages(old, (items) =>
-          items.map((e) =>
-            e.id === id
-              ? {
-                  ...e,
-                  amount: patch.amount ?? e.amount,
-                  description: patch.description ?? e.description,
-                  category: patch.category ?? e.category,
-                  date: patch.date ?? e.date,
-                }
-              : e,
-          ),
+      const previous = qc.getQueryData<Expense[]>(expensesQueryKey);
+      qc.setQueryData<Expense[]>(expensesQueryKey, (old) =>
+        old?.map((e) =>
+          e.id === id
+            ? {
+                ...e,
+                amount: patch.amount ?? e.amount,
+                description: patch.description ?? e.description,
+                category: patch.category ?? e.category,
+                date: patch.date ?? e.date,
+              }
+            : e,
         ),
       );
       let queueId: number | null = null;
@@ -280,16 +287,15 @@ export function useUpdateExpense(): UpdateExpenseMutation {
       if (result) {
         await dropQueued(ctx.queueId);
         await qc.invalidateQueries({ queryKey: expensesQueryKey });
-        await qc.invalidateQueries({ queryKey: ["insights"] });
       } else if (ctx.queueId === null) {
         // Same recovery as create: no offline queue + no network = roll back.
-        qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
+        qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
       }
     },
     onError: async (_err, _vars, ctx) => {
       if (!ctx) return;
       await dropQueued(ctx.queueId);
-      qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
+      qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
     },
   });
 }
@@ -300,9 +306,9 @@ export function useDeleteExpense(): DeleteExpenseMutation {
     mutationKey: ["expenses", "delete"],
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: expensesQueryKey });
-      const previous = qc.getQueryData<ExpensesData>(expensesQueryKey);
-      qc.setQueryData<ExpensesData>(expensesQueryKey, (old) =>
-        mapPages(old, (items) => items.filter((e) => e.id !== id)),
+      const previous = qc.getQueryData<Expense[]>(expensesQueryKey);
+      qc.setQueryData<Expense[]>(expensesQueryKey, (old) =>
+        old?.filter((e) => e.id !== id),
       );
       let queueId: number | null = null;
       try {
@@ -329,16 +335,15 @@ export function useDeleteExpense(): DeleteExpenseMutation {
       if (delivered) {
         await dropQueued(ctx.queueId);
         await qc.invalidateQueries({ queryKey: expensesQueryKey });
-        await qc.invalidateQueries({ queryKey: ["insights"] });
       } else if (ctx.queueId === null) {
         // Same recovery as create: no offline queue + no network = roll back.
-        qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
+        qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
       }
     },
     onError: async (_err, _vars, ctx) => {
       if (!ctx) return;
       await dropQueued(ctx.queueId);
-      qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
+      qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
     },
   });
 }
