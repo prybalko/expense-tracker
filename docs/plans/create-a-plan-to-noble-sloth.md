@@ -100,23 +100,27 @@ protected routes.
 Replace the template-based serving with the new API mux + an embedded
 `web/dist/` static handler.
 
-- [ ] Modify [cmd/server/main.go](cmd/server/main.go):
+- [x] Modify [cmd/server/main.go](cmd/server/main.go):
         - Drop template loading and the `/expenses`, `/statistics`, `/login`,
           etc. HTML routes.
         - Mount `api.NewRouter(...)` at `/api/`.
         - Add `//go:embed web/dist` (with a build tag fallback so the binary
           still compiles before the bundle exists — use a stub `web/dist/index.html`
           committed to the repo, or `embed.FS` with a placeholder).
+          (Implemented as `//go:embed all:dist` in `web/embed.go`, exposed as
+          `web.DistFS`, since `//go:embed` paths are relative to the source
+          file's directory and `cmd/server/main.go` cannot reach `web/`.)
         - Serve static files from the embedded FS for non-`/api/*` paths.
         - SPA fallback: any `GET` that isn't an existing file in the embed
           and isn't `/api/*` returns the embedded `index.html` with status
           200.
         - Keep `bootstrapUser`, `PORT`, `DB_PATH`, `SECURE_COOKIE`,
           `ADMIN_USER`, `ADMIN_PASSWORD` exactly as they are.
-- [ ] `go build ./cmd/server` succeeds (with the placeholder `web/dist/`).
-- [ ] `curl http://localhost:8080/api/categories` returns the 11 categories
-      after `go run ./cmd/server`.
-- [ ] Mark completed
+- [x] `go build ./cmd/server` succeeds (with the placeholder `web/dist/`).
+- [x] `curl http://localhost:8080/api/categories` returns the 11 categories
+      after `go run ./cmd/server` (verified via local smoke test on :18081
+      with login → `GET /api/categories` returning the full list).
+- [x] Mark completed
 
 ### Task 4: Delete the old HTML rendering layer
 

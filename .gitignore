@@ -1,7 +1,12 @@
 # Binaries
 main
-dist/
+/dist/
 bin/
+
+# Frontend build output (committed placeholder keeps //go:embed working)
+/web/dist/*
+!/web/dist/index.html
+!/web/dist/.gitkeep
 
 # Database
 *.db
