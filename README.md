@@ -4,10 +4,13 @@
 
 **A beautiful, mobile-first expense tracking app**
 
-Built with Go + HTMX for lightning-fast performance
+Built with Go + a React PWA, in the Linen & Ink visual style
 
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
-[![HTMX](https://img.shields.io/badge/HTMX-Powered-3366CC?style=flat-square)](https://htmx.org)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white)](https://react.dev)
+[![Vite](https://img.shields.io/badge/Vite-7-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![PWA](https://img.shields.io/badge/PWA-Installable-5A0FC8?style=flat-square&logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
 [![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://sqlite.org)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
@@ -46,11 +49,12 @@ Built with Go + HTMX for lightning-fast performance
 | | Feature | Description |
 |:---:|:---|:---|
 | 📱 | **Mobile-First** | Designed for on-the-go expense tracking |
-| ⚡ | **Instant Response** | Server-side rendering with HTMX — no JavaScript frameworks |
+| 🌐 | **Offline-First** | IndexedDB write queue + service worker; expenses you add offline sync when you're back online |
+| 📲 | **Installable PWA** | Linen-stripes icon, standalone display, works from your home screen |
+| 🎨 | **Linen & Ink Design** | Calm, paper-textured visual language — see [mockups/](mockups/) |
 | 🔢 | **Quick Entry** | Specialized numpad for rapid expense logging |
 | 📅 | **Smart Grouping** | Expenses organized chronologically by day |
 | 📊 | **Visual Insights** | Monthly charts & category breakdowns |
-| 🏷️ | **Categories** | Organize spending by type with emoji icons |
 | 🔒 | **Secure** | User authentication with session management |
 | 🐳 | **Containerized** | One-command deployment with Docker |
 
@@ -64,18 +68,34 @@ Built with Go + HTMX for lightning-fast performance
 docker-compose up --build
 ```
 
-Open [http://localhost:8080](http://localhost:8080) and start tracking!
+The Docker build runs the React bundle build automatically. Open
+[http://localhost:8080](http://localhost:8080) and start tracking!
 
-### Running Locally
+### Local development
+
+Two terminals — Go API on `:8080`, Vite dev server on `:5173` proxying `/api`
+to Go:
 
 ```bash
-# Install dependencies
-go mod download
-
-# Start the server
+# Terminal 1 — Go API
 go run ./cmd/server
 
-# Visit http://localhost:8080
+# Terminal 2 — React dev server
+cd web/app && npm install && npm run dev
+```
+
+Visit [http://localhost:5173](http://localhost:5173) for the dev experience
+with hot reload.
+
+### Production build
+
+Build the React bundle into `web/dist/` (which is embedded into the Go
+binary), then build the binary:
+
+```bash
+cd web/app && npm run build
+go build -o expense-tracker ./cmd/server
+./expense-tracker
 ```
 
 ---
@@ -100,16 +120,19 @@ go run ./cmd/server
 expense-tracker/
 ├── cmd/
 │   ├── adduser/          # User management CLI
-│   └── server/           # Application entry point
-├── e2e/                  # End-to-end tests (Playwright)
+│   └── server/           # Application entry point (embeds web/dist)
+├── e2e/                  # End-to-end tests (Playwright — needs update for the React DOM)
 ├── internal/
-│   ├── auth/             # Authentication logic
-│   ├── handlers/         # HTTP request handlers
+│   ├── api/              # JSON API handlers (auth, expenses, categories, insights)
+│   ├── auth/             # Authentication & session middleware
+│   ├── categories/       # Canonical category list (label + slug)
+│   ├── insights/         # Pure stats/rollup logic
 │   ├── models/           # Data models
 │   └── storage/          # SQLite database layer
+├── mockups/              # Linen & Ink design mockups (reference)
 ├── web/
-│   ├── static/           # CSS, JS, icons
-│   └── templates/        # HTML templates
+│   ├── app/              # Vite + React + TypeScript PWA source
+│   └── dist/             # Built bundle (gitignored, embedded by Go)
 └── docker-compose.yml    # Container orchestration
 ```
 
@@ -130,10 +153,18 @@ go run ./cmd/adduser -user <username> -password <password> -db path/to/expenses.
 
 ## 🧪 Testing
 
-### Unit Tests
+### Go tests
 
 ```bash
 go test ./internal/...
+```
+
+### Frontend typecheck & build
+
+```bash
+cd web/app
+npx tsc --noEmit
+npm run build
 ```
 
 ### E2E Tests
@@ -146,6 +177,10 @@ go run github.com/playwright-community/playwright-go/cmd/playwright install --wi
 go test -v ./e2e/...
 ```
 
+> **Note:** The Playwright suite was written against the legacy HTMX DOM and
+> needs its selectors updated for the new React UI before it can run green
+> again.
+
 ---
 
 ## 🛠️ Tech Stack
@@ -157,8 +192,12 @@ go test -v ./e2e/...
 <br/><sub><b>Go</b></sub>
 </td>
 <td align="center" width="100">
-<img src="https://htmx.org/img/htmx_logo.1.png" width="48" height="48" alt="HTMX"/>
-<br/><sub><b>HTMX</b></sub>
+<img src="https://react.dev/favicon-32x32.png" width="48" height="48" alt="React"/>
+<br/><sub><b>React</b></sub>
+</td>
+<td align="center" width="100">
+<img src="https://vitejs.dev/logo.svg" width="48" height="48" alt="Vite"/>
+<br/><sub><b>Vite</b></sub>
 </td>
 <td align="center" width="100">
 <img src="https://www.sqlite.org/images/sqlite370_banner.gif" width="48" height="48" alt="SQLite"/>
@@ -171,9 +210,12 @@ go test -v ./e2e/...
 </tr>
 </table>
 
-- **Backend:** Go with `html/template`
+- **Backend:** Go JSON API (`internal/api`) with embedded `web/dist/` bundle
 - **Database:** SQLite via [modernc.org/sqlite](https://modernc.org/sqlite) (CGo-free)
-- **Frontend:** HTMX + Custom CSS
+- **Frontend:** React + Vite + TypeScript
+- **Data fetching:** [TanStack Query](https://tanstack.com/query) (React Query)
+- **PWA:** [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) + [Workbox](https://developer.chrome.com/docs/workbox) runtime caching
+- **Offline writes:** [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) write queue (via [`idb`](https://github.com/jakearchibald/idb))
 - **Testing:** Playwright for Go
 
 ---

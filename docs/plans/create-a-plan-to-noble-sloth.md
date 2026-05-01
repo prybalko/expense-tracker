@@ -352,7 +352,7 @@ Only after Task 3 is verified working.
 
 ### Task 14: Update README.md
 
-- [ ] Rewrite [README.md](README.md) sections:
+- [x] Rewrite [README.md](README.md) sections:
         - **Header / badges**: drop the HTMX badge; add React + Vite + TS +
           PWA badges. Update the tagline ("Built with Go + React PWA").
         - **Features**: drop "Server-side rendering with HTMX — no JavaScript
@@ -379,7 +379,7 @@ Only after Task 3 is verified working.
         - **Testing**: keep Go tests; mention `cd web/app && npx tsc
           --noEmit` and any frontend test runner if added; flag that the
           Playwright e2e suite needs updating for the React DOM.
-- [ ] Mark completed
+- [x] Mark completed
 
 ### Task 15: Final verification
 
