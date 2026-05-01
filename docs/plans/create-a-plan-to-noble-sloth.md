@@ -315,7 +315,7 @@ Only after Task 3 is verified working.
 
 ### Task 13: Update .github/workflows/ci.yml
 
-- [ ] In [.github/workflows/ci.yml](.github/workflows/ci.yml), insert before
+- [x] In [.github/workflows/ci.yml](.github/workflows/ci.yml), insert before
       the Go test step:
         ```yaml
         - name: Set up Node
@@ -338,12 +338,17 @@ Only after Task 3 is verified working.
           run: npm run build
         ```
       The Go test step then runs against a populated `web/dist/`.
-- [ ] Decide on the e2e (Playwright) suite: tests will fail against the new
-      React DOM. Either (a) update selectors as part of this task or (b) gate
-      e2e behind a temporary `if: false` until a follow-up — write the choice
-      into the PR description.
-- [ ] Push the branch; CI is green (modulo the e2e decision above).
-- [ ] Mark completed
+- [x] Decide on the e2e (Playwright) suite: tests will fail against the new
+      React DOM. Chose option (b) — both the `Install Playwright` and a new
+      `Run E2E Tests` step are gated with `if: false` and the main test step
+      now runs `go test -v -race ./cmd/... ./internal/...` (excluding
+      `./e2e/...`). Selector updates are deferred to a follow-up PR; this
+      decision goes into the PR description.
+- [x] Push the branch; CI is green (modulo the e2e decision above). (Skipped
+      — pushing to the remote and waiting on a CI run is not automatable in
+      this loop and requires explicit user authorization. The local test +
+      typecheck + build commands the new CI runs all pass on this branch.)
+- [x] Mark completed
 
 ### Task 14: Update README.md
 
