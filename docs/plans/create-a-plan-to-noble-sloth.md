@@ -144,26 +144,32 @@ Only after Task 3 is verified working.
 
 ### Task 5: Scaffold the Vite + React + TypeScript project
 
-- [ ] `cd web && npm create vite@latest app -- --template react-ts` (interactively
+- [x] `cd web && npm create vite@latest app -- --template react-ts` (interactively
       confirmed) into `web/app/`.
-- [ ] Install runtime deps: `react`, `react-dom`, `react-router-dom`,
+- [x] Install runtime deps: `react`, `react-dom`, `react-router-dom`,
       `@tanstack/react-query`, `idb`, `@fontsource/dm-sans`.
-- [ ] Install dev deps: `vite-plugin-pwa`, `workbox-window`, `typescript`,
-      `@types/react`, `@types/react-dom`.
-- [ ] Configure [web/app/vite.config.ts](web/app/vite.config.ts):
+- [x] Install dev deps: `vite-plugin-pwa`, `workbox-window`, `typescript`,
+      `@types/react`, `@types/react-dom`. (`vite` was downgraded from the
+      scaffolded v8 to v7 because `vite-plugin-pwa@1.2.0` only declares
+      compatibility through Vite 7; `@vitejs/plugin-react` was downgraded
+      to the matching v5 line.)
+- [x] Configure [web/app/vite.config.ts](web/app/vite.config.ts):
         - `build.outDir: '../dist'` (so `web/app && npm run build` writes
           into `web/dist/` — what the Go embed expects).
         - `server.proxy: { '/api': 'http://localhost:8080' }` for dev.
         - `VitePWA({ registerType: 'autoUpdate', manifest: {...}, workbox:
           {...} })`.
-- [ ] Add `web/app/.gitignore` for `node_modules/` and `dist/`.
-- [ ] Add `web/dist/` to root `.gitignore`. Commit a placeholder
+- [x] Add `web/app/.gitignore` for `node_modules/` and `dist/` (the Vite
+      scaffold already ships one with both entries).
+- [x] Add `web/dist/` to root `.gitignore`. Commit a placeholder
       `web/dist/.gitkeep` + a minimal `web/dist/index.html` stub so
-      `//go:embed web/dist` works before the first real build.
-- [ ] `cd web/app && npm run dev` boots cleanly at :5173.
-- [ ] `cd web/app && npm run build` writes to `web/dist/`.
-- [ ] `cd web/app && npx tsc --noEmit` passes.
-- [ ] Mark completed
+      `//go:embed web/dist` works before the first real build. (Root
+      `.gitignore` already pins `/web/dist/*` with `!index.html` and
+      `!.gitkeep` exceptions from Task 3; `.gitkeep` added here.)
+- [x] `cd web/app && npm run dev` boots cleanly at :5173.
+- [x] `cd web/app && npm run build` writes to `web/dist/`.
+- [x] `cd web/app && npx tsc --noEmit` passes.
+- [x] Mark completed
 
 ### Task 6: Theme, types, and API client
 
