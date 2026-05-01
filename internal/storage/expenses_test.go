@@ -349,6 +349,42 @@ func (s *ExpenseTestSuite) TestGetCategoryTotalsByMonth_SingleCategory() {
 	}
 }
 
+func (s *ExpenseTestSuite) TestListExpensesByMonthCategory() {
+	jan2026 := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	feb2026 := time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC)
+
+	testExpenses := []struct {
+		amount   float64
+		desc     string
+		category string
+		date     time.Time
+		user     int64
+	}{
+		{10.00, "Bakery", "groceries", jan2026, 1},
+		{25.00, "Supermarket", "groceries", jan2026.Add(2 * time.Hour), 1},
+		{30.00, "Bus", "transport", jan2026.Add(3 * time.Hour), 1},
+		{50.00, "Feb groceries", "groceries", feb2026, 1},
+		// Different user, same category/month should be excluded
+		{99.00, "Other user groceries", "groceries", jan2026, 2},
+	}
+	for _, exp := range testExpenses {
+		err := s.db.CreateExpense(exp.amount, exp.desc, exp.category, exp.date, exp.user)
+		s.Require().NoError(err)
+	}
+
+	got, err := s.db.ListExpensesByMonthCategory(1, 2026, 1, "groceries")
+	s.Require().NoError(err)
+	s.Require().Len(got, 2, "expected 2 January groceries for user 1")
+	// date DESC ordering
+	s.Equal("Supermarket", got[0].Description)
+	s.Equal("Bakery", got[1].Description)
+
+	// Empty result for unused category
+	empty, err := s.db.ListExpensesByMonthCategory(1, 2026, 1, "nonexistent")
+	s.Require().NoError(err)
+	s.Empty(empty)
+}
+
 func (s *ExpenseTestSuite) TestGetExpensesByMonth_EdgeCases() {
 	// Test month boundaries
 	// Last day of January

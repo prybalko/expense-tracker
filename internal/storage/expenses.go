@@ -193,6 +193,28 @@ func (db *DB) ClearExpenses() error {
 	return err
 }
 
+// ListExpensesByMonthCategory returns expenses owned by userID that fall in the
+// given calendar month and match the given category, ordered by (date DESC,
+// id DESC). Used by the per-category drill-down on the Insights screen, where
+// the result set for one user × one month × one category is bounded enough to
+// return without cursor pagination.
+func (db *DB) ListExpensesByMonthCategory(userID int64, year, month int, category string) ([]models.Expense, error) {
+	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	endOfMonth := startOfMonth.AddDate(0, 1, 0)
+
+	rows, err := db.conn.Query(
+		`SELECT id, amount, description, category, date, user_id FROM expenses
+		 WHERE user_id = ? AND category = ? AND date >= ? AND date < ?
+		 ORDER BY date DESC, id DESC`,
+		userID, category, startOfMonth, endOfMonth,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanExpenses(rows)
+}
+
 // GetExpensesByMonth retrieves expenses for a specific month, owned by userID.
 func (db *DB) GetExpensesByMonth(userID int64, year, month int) ([]models.Expense, error) {
 	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { theme, FONT } from "../theme";
 import { TabBar } from "../components/TabBar";
 import { CategoryGlyph } from "../components/CategoryGlyph";
@@ -25,10 +25,18 @@ const MONTH_NAMES = [
 export function Insights() {
   const t = theme;
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const today = useMemo(() => new Date(), []);
-  const [period, setPeriod] = useState({
-    year: today.getFullYear(),
-    month: today.getMonth() + 1,
+  // Initial period: prefer ?year=&month= (set by the back-arrow on
+  // CategoryDetails so we land on the same month the user drilled in from),
+  // otherwise default to "this month."
+  const [period, setPeriod] = useState(() => {
+    const y = parseInt(searchParams.get("year") ?? "", 10);
+    const m = parseInt(searchParams.get("month") ?? "", 10);
+    if (Number.isFinite(y) && y > 0 && Number.isFinite(m) && m >= 1 && m <= 12) {
+      return { year: y, month: m };
+    }
+    return { year: today.getFullYear(), month: today.getMonth() + 1 };
   });
   const insights = useInsights({
     view: "month",
@@ -152,21 +160,20 @@ export function Insights() {
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div
             style={{
-              background: t.accentSoft,
+              background: t.card,
               borderRadius: 22,
-              padding: "18px 18px 16px",
-              color: t.accentInk,
+              padding: "18px 16px 16px",
             }}
           >
-            <div style={{ fontSize: 11, fontWeight: 500, opacity: 0.75 }}>
+            <div style={{ fontSize: 11, color: t.ink2, fontWeight: 500 }}>
               Spent · {monthLabel}
             </div>
             <div
               style={{
-                fontSize: 36,
+                fontSize: 28,
                 fontWeight: 600,
                 letterSpacing: "-0.02em",
                 marginTop: 4,
@@ -175,7 +182,7 @@ export function Insights() {
               {fmtEUR(total, { cents: false })}
             </div>
             {data?.hasChange ? (
-              <div style={{ fontSize: 12, marginTop: 4, opacity: 0.8 }}>
+              <div style={{ fontSize: 12, color: t.ink2, marginTop: 4 }}>
                 {data.isIncrease ? "↑" : "↓"}{" "}
                 {Math.abs(data.percentageChange).toFixed(0)}% vs {prevMonthName}
               </div>
@@ -297,9 +304,23 @@ export function Insights() {
                 const cat = lookup.byLabel(c.category) ?? lookup.fallback;
                 const tone = cat.color;
                 return (
-                  <div
+                  <button
                     key={c.category}
+                    type="button"
+                    data-testid={`category-row-${cat.slug}`}
+                    onClick={() =>
+                      navigate(
+                        `/insights/category/${cat.slug}?year=${period.year}&month=${period.month}`,
+                      )
+                    }
                     style={{
+                      width: "100%",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      background: "transparent",
+                      border: "none",
+                      fontFamily: FONT,
+                      color: t.ink,
                       padding: "14px 16px",
                       borderTop: i === 0 ? "none" : `1px solid ${t.rule}`,
                     }}
@@ -374,8 +395,21 @@ export function Insights() {
                           />
                         </div>
                       </div>
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke={t.ink2}
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ flex: "0 0 auto", marginLeft: 4 }}
+                      >
+                        <path d="M9 6l6 6-6 6" />
+                      </svg>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>

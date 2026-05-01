@@ -113,6 +113,82 @@ func TestHandleListExpenses(t *testing.T) {
 	})
 }
 
+func TestHandleListExpenses_MonthCategoryFilter(t *testing.T) {
+	env := newTestEnv(t)
+
+	jan := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
+	feb := time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC)
+	seed := []struct {
+		amount float64
+		desc   string
+		cat    string
+		date   time.Time
+	}{
+		{10, "bakery", "Groceries", jan},
+		{25, "supermarket", "Groceries", jan.Add(2 * time.Hour)},
+		{15, "bus", "Transport", jan},
+		{40, "feb shop", "Groceries", feb},
+	}
+	for _, e := range seed {
+		if _, err := env.db.InsertExpense(e.amount, e.desc, e.cat, e.date, env.user.ID); err != nil {
+			t.Fatalf("seed %s: %v", e.desc, err)
+		}
+	}
+
+	t.Run("filters by year/month/category", func(t *testing.T) {
+		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?year=2026&month=1&category=Groceries", nil))
+		rec := httptest.NewRecorder()
+		env.server.handleListExpenses(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status: got %d want 200 (body=%q)", rec.Code, rec.Body.String())
+		}
+		var resp listExpensesResponse
+		decodeBody(t, rec, &resp)
+		if len(resp.Items) != 2 {
+			t.Fatalf("items: got %d want 2 (%+v)", len(resp.Items), resp.Items)
+		}
+		// date DESC order
+		if resp.Items[0].Description != "supermarket" || resp.Items[1].Description != "bakery" {
+			t.Fatalf("ordering wrong: %+v", resp.Items)
+		}
+		if resp.NextCursor != nil {
+			t.Fatalf("nextCursor: got %v want nil", *resp.NextCursor)
+		}
+	})
+
+	t.Run("partial filter returns 400", func(t *testing.T) {
+		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?category=Groceries", nil))
+		rec := httptest.NewRecorder()
+		env.server.handleListExpenses(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status: got %d want 400", rec.Code)
+		}
+	})
+
+	t.Run("invalid month returns 400", func(t *testing.T) {
+		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?year=2026&month=13&category=Groceries", nil))
+		rec := httptest.NewRecorder()
+		env.server.handleListExpenses(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status: got %d want 400", rec.Code)
+		}
+	})
+
+	t.Run("no matches returns empty array", func(t *testing.T) {
+		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?year=2026&month=3&category=Groceries", nil))
+		rec := httptest.NewRecorder()
+		env.server.handleListExpenses(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status: got %d want 200", rec.Code)
+		}
+		var resp listExpensesResponse
+		decodeBody(t, rec, &resp)
+		if resp.Items == nil || len(resp.Items) != 0 {
+			t.Fatalf("expected empty slice, got %+v", resp.Items)
+		}
+	})
+}
+
 func TestHandleGetExpense(t *testing.T) {
 	env := newTestEnv(t)
 	created, err := env.db.InsertExpense(42, "Find me", "Other", time.Now(), env.user.ID)

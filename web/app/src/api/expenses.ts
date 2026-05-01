@@ -9,6 +9,12 @@ import type {
 export type ListExpensesParams = {
   limit?: number;
   before?: string | null;
+  // When all three are provided, the server returns the unpaginated set of
+  // expenses for that user × month × category — used by the per-category
+  // drill-down on Insights.
+  year?: number;
+  month?: number;
+  category?: string;
 };
 
 export function listExpenses(
@@ -18,6 +24,9 @@ export function listExpenses(
     query: {
       limit: params.limit,
       before: params.before ?? undefined,
+      year: params.year,
+      month: params.month,
+      category: params.category,
     },
   });
 }

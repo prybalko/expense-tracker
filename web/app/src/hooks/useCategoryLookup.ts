@@ -1,4 +1,4 @@
-import { categories } from "../categories";
+import { categories, extendedCategories } from "../categories";
 import type { Category, CategoryColor } from "../types";
 
 const FALLBACK: Category = {
@@ -8,11 +8,14 @@ const FALLBACK: Category = {
   color: { bg: "#E0DCD4", ink: "#3A352E" },
 };
 
+// Active categories drive the picker; extended ones extend the palette so
+// any expense whose category matches one of those slugs/labels still
+// renders with the right glyph + tone.
 const slugMap = new Map<string, Category>();
 const labelMap = new Map<string, Category>();
-for (const c of categories) {
-  slugMap.set(c.slug, c);
-  labelMap.set(c.label, c);
+for (const c of [...categories, ...extendedCategories]) {
+  if (!slugMap.has(c.slug)) slugMap.set(c.slug, c);
+  if (!labelMap.has(c.label)) labelMap.set(c.label, c);
 }
 
 const bySlug = (slug: string) => slugMap.get(slug);

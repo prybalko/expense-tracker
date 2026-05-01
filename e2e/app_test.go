@@ -204,7 +204,20 @@ func (s *E2ETestSuite) TestAddExpenseToBlankList() {
 func (s *E2ETestSuite) TestEditExpenseFlow() {
 	s.login()
 
-	// 1. Create an expense to edit, picking the Transport category and the 1st
+	// Pick days that are guaranteed past-or-today so the calendar grid
+	// doesn't disable them. CalendarGrid blocks any day strictly after today
+	// (web/app/src/components/CalendarGrid.tsx:174-180), so on the 1st of
+	// any month neither day 2 nor day 30 of the current month is selectable.
+	// `createDay` is 1 (always valid). `editDay` is today's day-of-month so
+	// it's selectable; when today >= 2 it's also strictly later than
+	// `createDay`, exercising a real forward bump. When today == 1, both
+	// dates collapse to day 1 and the date stays put — the rest of the
+	// edit flow (amount, note, hero total) still exercises.
+	todayDay := time.Now().Day()
+	createDay := 1
+	editDay := todayDay
+
+	// 1. Create an expense to edit, picking the Transport category and day 1
 	//    of the current month so we can assert both stick across edits.
 	err := s.page.Locator(tid("fab-add")).Click()
 	s.Require().NoError(err, "failed to click add button")
@@ -215,15 +228,15 @@ func (s *E2ETestSuite) TestEditExpenseFlow() {
 	err = s.page.Locator(tid("category-tile-transport")).Click()
 	s.Require().NoError(err, "failed to select Transport category")
 
-	// Open date sheet, pick the 1st, commit with Done.
+	// Open date sheet, pick createDay, commit with Done.
 	err = s.page.Locator(tid("date-pill")).Click()
 	s.Require().NoError(err, "failed to open date picker")
 
 	err = s.expect.Locator(s.page.Locator(tid("date-sheet"))).ToBeVisible()
 	s.Require().NoError(err, "date sheet not visible")
 
-	err = s.page.Locator(tid("calendar-day-" + dayISO(1))).Click()
-	s.Require().NoError(err, "failed to pick day 1")
+	err = s.page.Locator(tid("calendar-day-" + dayISO(createDay))).Click()
+	s.Require().NoError(err, "failed to pick day %d", createDay)
 
 	err = s.page.Locator(tid("date-sheet-done")).Click()
 	s.Require().NoError(err, "failed to commit date selection")
@@ -279,17 +292,16 @@ func (s *E2ETestSuite) TestEditExpenseFlow() {
 	err = s.page.Locator(tid("entry-note")).Fill("Updated Expense")
 	s.Require().NoError(err, "failed to update note")
 
-	// Bump the date forward by one day (calendar always has at least 2 days
-	// since we created the expense on day 1; for day-1 runs the sheet allows
-	// picking day 2 which is still in the past or today).
+	// Re-open the date sheet and pick editDay (today). When today >= 2 this
+	// bumps the date forward from createDay (1); on the 1st it stays on day 1.
 	err = s.page.Locator(tid("date-pill")).Click()
 	s.Require().NoError(err, "failed to reopen date picker")
 
 	err = s.expect.Locator(s.page.Locator(tid("date-sheet"))).ToBeVisible()
 	s.Require().NoError(err, "date sheet not visible on edit")
 
-	err = s.page.Locator(tid("calendar-day-" + dayISO(2))).Click()
-	s.Require().NoError(err, "failed to pick day 2")
+	err = s.page.Locator(tid("calendar-day-" + dayISO(editDay))).Click()
+	s.Require().NoError(err, "failed to pick day %d", editDay)
 
 	err = s.page.Locator(tid("date-sheet-done")).Click()
 	s.Require().NoError(err, "failed to commit edited date")
@@ -388,6 +400,76 @@ func (s *E2ETestSuite) TestDeleteButtonNotVisibleOnCreate() {
 	// The keypad's del key is always present.
 	err = s.expect.Locator(s.page.Locator(tid("keypad-del"))).ToBeVisible()
 	s.Require().NoError(err, "keypad del key should be visible")
+}
+
+func (s *E2ETestSuite) TestCategoryDetailsFromInsights() {
+	s.login()
+
+	// Seed two Groceries expenses so the category row has a clear total/count.
+	s.addExpense("12.50", "Bakery", "groceries")
+	s.addExpense("25.00", "Supermarket", "groceries")
+
+	err := s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(2)
+	s.Require().NoError(err, "expected 2 rows after seeding")
+
+	// Switch to Insights. The TabBar's insights button has no data-testid, so
+	// drive navigation through the URL directly — equivalent to a tap and not
+	// the focus of this test.
+	_, err = s.page.Goto(appURL + "/insights")
+	s.Require().NoError(err, "failed to navigate to /insights")
+
+	// Click the Groceries category row.
+	row := s.page.Locator(tid("category-row-groceries"))
+	err = s.expect.Locator(row).ToBeVisible()
+	s.Require().NoError(err, "groceries category row not visible on insights")
+
+	err = row.Click()
+	s.Require().NoError(err, "failed to click groceries row")
+
+	// Details screen renders with the right total and count.
+	err = s.expect.Locator(s.page.Locator(tid("category-details"))).ToBeVisible()
+	s.Require().NoError(err, "category details screen not visible")
+
+	err = s.expect.Locator(s.page.Locator(tid("category-details-total"))).ToContainText("37")
+	s.Require().NoError(err, "category total mismatch (expected 37 in 37.50)")
+
+	err = s.expect.Locator(s.page.Locator(tid("category-details-count"))).ToContainText("2 transactions")
+	s.Require().NoError(err, "category count mismatch")
+
+	// Both expenses appear in the day-grouped list.
+	err = s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(2)
+	s.Require().NoError(err, "expected 2 expense rows on details page")
+
+	// Tapping a row opens the edit form for that expense.
+	err = s.page.Locator(tid("expense-row")).First().Click()
+	s.Require().NoError(err, "failed to click expense row on details")
+
+	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).ToBeVisible()
+	s.Require().NoError(err, "entry form should open from details click")
+}
+
+// addExpense is a small helper used by tests that need pre-seeded rows. It
+// taps FAB → keypad → note → category tile → submit.
+func (s *E2ETestSuite) addExpense(amount, note, categorySlug string) {
+	err := s.page.Locator(tid("fab-add")).Click()
+	s.Require().NoError(err, "failed to click add button")
+
+	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).ToBeVisible()
+	s.Require().NoError(err, "entry form not visible")
+
+	s.pressKeys(amount)
+
+	err = s.page.Locator(tid("entry-note")).Fill(note)
+	s.Require().NoError(err, "failed to fill note %q", note)
+
+	err = s.page.Locator(tid("category-tile-" + categorySlug)).Click()
+	s.Require().NoError(err, "failed to select category %s", categorySlug)
+
+	err = s.page.Locator(tid("entry-submit")).Click()
+	s.Require().NoError(err, "failed to submit %q", note)
+
+	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).Not().ToBeVisible()
+	s.Require().NoError(err, "entry form should close after submit")
 }
 
 // TestE2ESuite is the entry point go test discovers.

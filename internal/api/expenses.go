@@ -102,6 +102,46 @@ func (s *Server) handleListExpenses(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+
+	// Per-category month drill-down: when year, month, and category are all
+	// supplied, return the unpaginated month×category slice. The result set
+	// for one user × one month × one category is bounded enough to skip
+	// cursor pagination entirely.
+	yearParam := r.URL.Query().Get("year")
+	monthParam := r.URL.Query().Get("month")
+	categoryParam := strings.TrimSpace(r.URL.Query().Get("category"))
+	if yearParam != "" || monthParam != "" || categoryParam != "" {
+		if yearParam == "" || monthParam == "" || categoryParam == "" {
+			writeError(w, http.StatusBadRequest, "year, month, and category must be provided together")
+			return
+		}
+		year, err := strconv.Atoi(yearParam)
+		if err != nil || year <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid year")
+			return
+		}
+		month, err := strconv.Atoi(monthParam)
+		if err != nil || month < 1 || month > 12 {
+			writeError(w, http.StatusBadRequest, "invalid month (1-12)")
+			return
+		}
+		if len(categoryParam) > maxCategoryLength {
+			writeError(w, http.StatusBadRequest, "category is too long")
+			return
+		}
+		items, err := s.db.ListExpensesByMonthCategory(user.ID, year, month, categoryParam)
+		if err != nil {
+			log.Printf("api: list expenses by month/category: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+		if items == nil {
+			items = []models.Expense{}
+		}
+		writeJSON(w, http.StatusOK, listExpensesResponse{Items: items, NextCursor: nil})
+		return
+	}
+
 	limit := defaultPageSize
 	if v := r.URL.Query().Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)

@@ -1,9 +1,11 @@
 import {
   useInfiniteQuery,
   useMutation,
+  useQuery,
   useQueryClient,
   type InfiniteData,
   type UseMutationResult,
+  type UseQueryResult,
 } from "@tanstack/react-query";
 import {
   createExpense,
@@ -43,6 +45,22 @@ export function useExpenses(limit?: number) {
       return listExpenses(params);
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  });
+}
+
+// Per-category drill-down on Insights: returns the unpaginated list of
+// expenses for the given user × month × category. The cache key starts with
+// `expenses` so it's invalidated alongside the main feed by create/update/
+// delete mutations (TanStack's invalidateQueries does prefix matching).
+export function useExpensesForCategory(
+  year: number,
+  month: number,
+  category: string,
+): UseQueryResult<ExpensePage, Error> {
+  return useQuery<ExpensePage, Error>({
+    queryKey: ["expenses", "by-category", year, month, category],
+    queryFn: () => listExpenses({ year, month, category }),
+    enabled: Boolean(category) && year > 0 && month >= 1 && month <= 12,
   });
 }
 

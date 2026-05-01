@@ -7,6 +7,7 @@ import "@fontsource/dm-sans/600.css";
 import { Login } from "./screens/Login";
 import { Feed } from "./screens/Feed";
 import { Insights } from "./screens/Insights";
+import { CategoryDetails } from "./screens/CategoryDetails";
 import { EntryForm } from "./screens/EntryForm";
 import { setupOnlineSync } from "./offline/sync";
 
@@ -34,6 +35,10 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<Feed />} />
           <Route path="/insights" element={<Insights />} />
+          <Route
+            path="/insights/category/:slug"
+            element={<CategoryDetails />}
+          />
           <Route path="/add" element={<EntryForm />} />
           <Route path="/edit/:id" element={<EntryForm />} />
           <Route path="*" element={<Navigate to="/" replace />} />
