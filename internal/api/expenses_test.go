@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -293,6 +294,46 @@ func TestHandleListExpensesPaginationSurvivesAnchorDelete(t *testing.T) {
 	}
 	if page2.Items[0].Description != "second" || page2.Items[1].Description != "oldest" {
 		t.Fatalf("page2 ordering wrong: %+v", page2.Items)
+	}
+}
+
+func TestHandleCreateExpenseRejectsOversizedFields(t *testing.T) {
+	env := newTestEnv(t)
+	long := strings.Repeat("a", maxDescriptionLength+1)
+	body := map[string]any{
+		"amount": 5, "description": long, "category": "Other",
+	}
+	req := env.withUser(buildRequest(t, http.MethodPost, "/api/expenses", body))
+	rec := httptest.NewRecorder()
+	env.server.handleCreateExpense(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("oversized description: got %d want 400 (body=%q)", rec.Code, rec.Body.String())
+	}
+
+	body = map[string]any{
+		"amount": 5, "description": "ok",
+		"category": strings.Repeat("c", maxCategoryLength+1),
+	}
+	req = env.withUser(buildRequest(t, http.MethodPost, "/api/expenses", body))
+	rec = httptest.NewRecorder()
+	env.server.handleCreateExpense(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("oversized category: got %d want 400 (body=%q)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleCreateExpenseRejectsOversizedBody(t *testing.T) {
+	env := newTestEnv(t)
+	// Build a JSON body larger than maxRequestBody so MaxBytesReader trips.
+	huge := strings.Repeat("a", maxRequestBody+1024)
+	body := map[string]any{
+		"amount": 5, "description": huge, "category": "Other",
+	}
+	req := env.withUser(buildRequest(t, http.MethodPost, "/api/expenses", body))
+	rec := httptest.NewRecorder()
+	env.server.handleCreateExpense(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("oversized body: got %d want 400 (body=%q)", rec.Code, rec.Body.String())
 	}
 }
 

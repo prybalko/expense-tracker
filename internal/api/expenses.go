@@ -17,6 +17,14 @@ import (
 const (
 	defaultPageSize = 50
 	maxPageSize     = 200
+	// Caps on free-text fields to keep stored rows and the unique-index
+	// (date, amount, description) bounded. The PWA's notes field is a
+	// short caption — 200 chars is generous. The category Label comes
+	// from the canonical list (categories.All) which is far shorter than
+	// 64, but the API accepts arbitrary strings on update, so we cap it
+	// here too. Aligned with the 64 KiB body cap in json.go.
+	maxDescriptionLength = 200
+	maxCategoryLength    = 64
 )
 
 // parseAPIDate accepts RFC3339 or the date-only "2006-01-02" form sent by the
@@ -155,7 +163,7 @@ func (s *Server) handleCreateExpense(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createExpenseRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -163,8 +171,18 @@ func (s *Server) handleCreateExpense(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "amount must be positive")
 		return
 	}
-	if strings.TrimSpace(req.Category) == "" {
+	req.Description = strings.TrimSpace(req.Description)
+	req.Category = strings.TrimSpace(req.Category)
+	if req.Category == "" {
 		writeError(w, http.StatusBadRequest, "category is required")
+		return
+	}
+	if len(req.Description) > maxDescriptionLength {
+		writeError(w, http.StatusBadRequest, "description is too long")
+		return
+	}
+	if len(req.Category) > maxCategoryLength {
+		writeError(w, http.StatusBadRequest, "category is too long")
 		return
 	}
 
@@ -225,7 +243,7 @@ func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req updateExpenseRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -238,14 +256,24 @@ func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
 		existing.Amount = *req.Amount
 	}
 	if req.Description != nil {
-		existing.Description = *req.Description
+		desc := strings.TrimSpace(*req.Description)
+		if len(desc) > maxDescriptionLength {
+			writeError(w, http.StatusBadRequest, "description is too long")
+			return
+		}
+		existing.Description = desc
 	}
 	if req.Category != nil {
-		if strings.TrimSpace(*req.Category) == "" {
+		cat := strings.TrimSpace(*req.Category)
+		if cat == "" {
 			writeError(w, http.StatusBadRequest, "category cannot be empty")
 			return
 		}
-		existing.Category = *req.Category
+		if len(cat) > maxCategoryLength {
+			writeError(w, http.StatusBadRequest, "category is too long")
+			return
+		}
+		existing.Category = cat
 	}
 	if req.Date != nil {
 		d, err := parseAPIDate(*req.Date)
