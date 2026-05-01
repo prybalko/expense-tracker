@@ -12,7 +12,7 @@ import {
   useUpdateExpense,
   useDeleteExpense,
 } from "../hooks/useExpenses";
-import { useCategories } from "../hooks/useCategories";
+import { categories } from "../categories";
 import { getExpense } from "../api/expenses";
 import type { Expense } from "../types";
 
@@ -420,7 +420,6 @@ export function EntryForm() {
   const fetchFailed =
     isEdit && !existingFromCache && fetchedExpenseQuery.isError;
 
-  const { data: categories = [] } = useCategories();
   const defaultCategory = categories[0]?.label ?? "Other";
 
   const usageCounts = useMemo(() => {

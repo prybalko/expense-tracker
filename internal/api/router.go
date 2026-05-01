@@ -30,7 +30,6 @@ func NewRouter(db *storage.DB, secureCookie bool) http.Handler {
 	}
 	mux.Handle("POST /api/auth/logout", protected(s.handleLogout))
 	mux.Handle("GET /api/auth/me", protected(s.handleMe))
-	mux.Handle("GET /api/categories", protected(s.handleListCategories))
 	mux.Handle("GET /api/expenses", protected(s.handleListExpenses))
 	mux.Handle("GET /api/expenses/{id}", protected(s.handleGetExpense))
 	mux.Handle("POST /api/expenses", protected(s.handleCreateExpense))

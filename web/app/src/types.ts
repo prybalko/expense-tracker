@@ -3,9 +3,16 @@ export type User = {
   username: string;
 };
 
+export type CategoryColor = {
+  bg: string;
+  ink: string;
+};
+
 export type Category = {
-  label: string;
   slug: string;
+  label: string;
+  icon: string;
+  color: CategoryColor;
 };
 
 export type Expense = {

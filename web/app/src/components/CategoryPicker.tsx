@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { UIEvent } from "react";
 import { theme, FONT } from "../theme";
-import { useCategories } from "../hooks/useCategories";
+import { categories } from "../categories";
 import { CategoryGlyph } from "./CategoryGlyph";
 import type { Category } from "../types";
 
@@ -36,7 +36,6 @@ function orderCategories(
 
 export function CategoryPicker({ value, onChange, usageCounts = {} }: Props) {
   const t = theme;
-  const { data: categories = [] } = useCategories();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [page, setPage] = useState(0);
 
@@ -103,7 +102,7 @@ export function CategoryPicker({ value, onChange, usageCounts = {} }: Props) {
           >
             {pageCats.map((cat) => {
               const sel = cat.label === value;
-              const tone = t.cat[cat.slug] ?? t.cat.other;
+              const tone = cat.color;
               return (
                 <button
                   key={cat.label}
@@ -138,7 +137,7 @@ export function CategoryPicker({ value, onChange, usageCounts = {} }: Props) {
                       placeItems: "center",
                     }}
                   >
-                    <CategoryGlyph slug={cat.slug} size={18} />
+                    <CategoryGlyph icon={cat.icon} size={18} />
                   </div>
                   <span style={{ fontSize: 11, fontWeight: 500 }}>
                     {cat.label}

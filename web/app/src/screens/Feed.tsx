@@ -5,7 +5,7 @@ import { Hero } from "../components/Hero";
 import { DayGroup } from "../components/DayGroup";
 import { TabBar } from "../components/TabBar";
 import { useExpenses } from "../hooks/useExpenses";
-import { useCategories } from "../hooks/useCategories";
+import { useCategoryLookup } from "../hooks/useCategoryLookup";
 import { useInsights } from "../hooks/useInsights";
 import type { Expense } from "../types";
 
@@ -61,13 +61,8 @@ export function Feed() {
     month: today.getMonth() + 1,
   });
   const expenses = useExpenses(50);
-  const { data: categories = [] } = useCategories();
-
-  const slugFor = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of categories) map.set(c.label, c.slug);
-    return (label: string) => map.get(label) ?? "other";
-  }, [categories]);
+  const lookup = useCategoryLookup();
+  const slugFor = lookup.slugByLabel;
 
   const allItems: Expense[] = useMemo(
     () => expenses.data?.pages.flatMap((p) => p.items) ?? [],

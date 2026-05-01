@@ -1,5 +1,6 @@
 import { theme, FONT } from "../theme";
 import { CategoryGlyph } from "./CategoryGlyph";
+import { useCategoryLookup } from "../hooks/useCategoryLookup";
 import type { Expense } from "../types";
 
 type Props = {
@@ -11,7 +12,9 @@ type Props = {
 
 export function ExpenseRow({ expense, slug, isFirst = false, onClick }: Props) {
   const t = theme;
-  const tone = t.cat[slug] ?? t.cat.other;
+  const lookup = useCategoryLookup();
+  const cat = lookup.bySlug(slug) ?? lookup.fallback;
+  const tone = cat.color;
 
   return (
     <button
@@ -46,7 +49,7 @@ export function ExpenseRow({ expense, slug, isFirst = false, onClick }: Props) {
           flex: "0 0 auto",
         }}
       >
-        <CategoryGlyph slug={slug} size={20} />
+        <CategoryGlyph icon={cat.icon} size={20} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div

@@ -4,7 +4,7 @@ import { theme, FONT } from "../theme";
 import { TabBar } from "../components/TabBar";
 import { CategoryGlyph } from "../components/CategoryGlyph";
 import { useInsights } from "../hooks/useInsights";
-import { useCategories } from "../hooks/useCategories";
+import { useCategoryLookup } from "../hooks/useCategoryLookup";
 import { fmtEUR } from "../format";
 
 const MONTH_NAMES = [
@@ -35,13 +35,7 @@ export function Insights() {
     year: period.year,
     month: period.month,
   });
-  const { data: categories = [] } = useCategories();
-
-  const slugFor = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of categories) map.set(c.label, c.slug);
-    return (label: string) => map.get(label) ?? "other";
-  }, [categories]);
+  const lookup = useCategoryLookup();
 
   const data = insights.data;
   const monthLabel = data?.monthName ?? MONTH_NAMES[period.month - 1] ?? "";
@@ -300,8 +294,8 @@ export function Insights() {
               }}
             >
               {cats.map((c, i) => {
-                const slug = slugFor(c.category);
-                const tone = t.cat[slug] ?? t.cat.other;
+                const cat = lookup.byLabel(c.category) ?? lookup.fallback;
+                const tone = cat.color;
                 return (
                   <div
                     key={c.category}
@@ -323,7 +317,7 @@ export function Insights() {
                           flex: "0 0 auto",
                         }}
                       >
-                        <CategoryGlyph slug={slug} size={18} />
+                        <CategoryGlyph icon={cat.icon} size={18} />
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div

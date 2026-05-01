@@ -19,10 +19,10 @@ const (
 	maxPageSize     = 200
 	// Caps on free-text fields to keep stored rows and the unique-index
 	// (date, amount, description) bounded. The PWA's notes field is a
-	// short caption — 200 chars is generous. The category Label comes
-	// from the canonical list (categories.All) which is far shorter than
-	// 64, but the API accepts arbitrary strings on update, so we cap it
-	// here too. Aligned with the 64 KiB body cap in json.go.
+	// short caption — 200 chars is generous. The category is a freeform
+	// string (canonical list lives on the frontend); 64 chars is well
+	// over any realistic label. Aligned with the 64 KiB body cap in
+	// json.go.
 	maxDescriptionLength = 200
 	maxCategoryLength    = 64
 )

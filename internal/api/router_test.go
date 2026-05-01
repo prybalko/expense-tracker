@@ -16,7 +16,6 @@ func TestRouterRequiresAuth(t *testing.T) {
 	}{
 		{"me", http.MethodGet, "/api/auth/me"},
 		{"logout", http.MethodPost, "/api/auth/logout"},
-		{"categories", http.MethodGet, "/api/categories"},
 		{"list expenses", http.MethodGet, "/api/expenses"},
 		{"create expense", http.MethodPost, "/api/expenses"},
 		{"insights", http.MethodGet, "/api/insights"},

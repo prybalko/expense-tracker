@@ -1,0 +1,13 @@
+[
+  { "slug": "groceries",     "label": "Groceries",     "icon": "groceries",     "color": { "bg": "#E5E2F0", "ink": "#322B66" } },
+  { "slug": "eating",        "label": "Eating Out",    "icon": "eating",        "color": { "bg": "#DAE6DC", "ink": "#234633" } },
+  { "slug": "transport",     "label": "Transport",     "icon": "transport",     "color": { "bg": "#D8E2DD", "ink": "#28433D" } },
+  { "slug": "housing",       "label": "Housing",       "icon": "housing",       "color": { "bg": "#DEE3EC", "ink": "#26384D" } },
+  { "slug": "utilities",     "label": "Utilities",     "icon": "utilities",     "color": { "bg": "#E5D6EA", "ink": "#3E1F66" } },
+  { "slug": "fitness",       "label": "Sport",         "icon": "fitness",       "color": { "bg": "#D4E4D6", "ink": "#214A2D" } },
+  { "slug": "health",        "label": "Health",        "icon": "health",        "color": { "bg": "#EFE0C5", "ink": "#5C3D18" } },
+  { "slug": "entertainment", "label": "Entertainment", "icon": "entertainment", "color": { "bg": "#E0D6EE", "ink": "#3D205C" } },
+  { "slug": "travel",        "label": "Travel",        "icon": "travel",        "color": { "bg": "#F2D7DA", "ink": "#6E2730" } },
+  { "slug": "gifts",         "label": "Gifts",         "icon": "gifts",         "color": { "bg": "#F1D6DD", "ink": "#612434" } },
+  { "slug": "other",         "label": "Other",         "icon": "other",         "color": { "bg": "#E0DCD4", "ink": "#3A352E" } }
+]
