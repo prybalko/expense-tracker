@@ -22,6 +22,10 @@ export function listExpenses(
   });
 }
 
+export function getExpense(id: number): Promise<Expense> {
+  return request<Expense>(`/api/expenses/${id}`);
+}
+
 export function createExpense(input: CreateExpenseInput): Promise<Expense> {
   return request<Expense>("/api/expenses", {
     method: "POST",

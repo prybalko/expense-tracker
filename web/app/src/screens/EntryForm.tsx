@@ -13,7 +13,7 @@ import {
   useDeleteExpense,
 } from "../hooks/useExpenses";
 import { useCategories } from "../hooks/useCategories";
-import { listExpenses } from "../api/expenses";
+import { getExpense } from "../api/expenses";
 import type { Expense } from "../types";
 
 function toIsoDate(d: Date): string {
@@ -359,9 +359,12 @@ export function EntryForm() {
   const fetchedExpenseQuery = useQuery<Expense | null>({
     queryKey: ["expense", editingId],
     queryFn: async () => {
-      const page = await listExpenses({ limit: 50 });
-      const found = page.items.find((e) => e.id === editingId);
-      return found ?? null;
+      if (editingId === null) return null;
+      try {
+        return await getExpense(editingId);
+      } catch {
+        return null;
+      }
     },
     enabled: isEdit && !existingFromCache,
   });

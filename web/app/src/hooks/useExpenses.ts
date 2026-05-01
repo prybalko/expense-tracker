@@ -79,19 +79,28 @@ function mapPages(
 
 type CreateContext = {
   tempId: number;
-  queueId: number;
+  queueId: number | null;
   previous: ExpensesData | undefined;
 };
 
 type UpdateContext = {
-  queueId: number;
+  queueId: number | null;
   previous: ExpensesData | undefined;
 };
 
 type DeleteContext = {
-  queueId: number;
+  queueId: number | null;
   previous: ExpensesData | undefined;
 };
+
+async function dropQueued(queueId: number | null): Promise<void> {
+  if (queueId === null) return;
+  try {
+    await removeQueued(queueId);
+  } catch {
+    // queue already gone or IDB unavailable — nothing to do
+  }
+}
 
 export type CreateExpenseMutation = UseMutationResult<
   Expense | null,
@@ -148,17 +157,15 @@ export function useCreateExpense(): CreateExpenseMutation {
           ),
         };
       });
-      let queueId: number;
+      let queueId: number | null = null;
       try {
         queueId = await enqueueWrite({
           op: "create",
           payload: { ...input, tempId },
         });
-      } catch (err) {
-        // IDB unavailable — restore the optimistic state and rethrow so the
-        // mutation falls into onError with no context (we're returning early).
-        qc.setQueryData<ExpensesData>(expensesQueryKey, previous);
-        throw err;
+      } catch {
+        // IDB unavailable (private browsing / quota) — proceed without offline
+        // persistence. The network call below is the source of truth.
       }
       return { tempId, queueId, previous };
     },
@@ -173,14 +180,14 @@ export function useCreateExpense(): CreateExpenseMutation {
     onSuccess: async (result, _vars, ctx) => {
       if (!ctx) return;
       if (result) {
-        await removeQueued(ctx.queueId);
+        await dropQueued(ctx.queueId);
         await qc.invalidateQueries({ queryKey: expensesQueryKey });
         await qc.invalidateQueries({ queryKey: ["insights"] });
       }
     },
     onError: async (_err, _vars, ctx) => {
       if (!ctx) return;
-      await removeQueued(ctx.queueId);
+      await dropQueued(ctx.queueId);
       qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
     },
   });
@@ -213,15 +220,14 @@ export function useUpdateExpense(): UpdateExpenseMutation {
           ),
         ),
       );
-      let queueId: number;
+      let queueId: number | null = null;
       try {
         queueId = await enqueueWrite({
           op: "update",
           payload: { id, patch },
         });
-      } catch (err) {
-        qc.setQueryData<ExpensesData>(expensesQueryKey, previous);
-        throw err;
+      } catch {
+        // IDB unavailable — proceed without offline persistence.
       }
       return { queueId, previous };
     },
@@ -236,14 +242,14 @@ export function useUpdateExpense(): UpdateExpenseMutation {
     onSuccess: async (result, _vars, ctx) => {
       if (!ctx) return;
       if (result) {
-        await removeQueued(ctx.queueId);
+        await dropQueued(ctx.queueId);
         await qc.invalidateQueries({ queryKey: expensesQueryKey });
         await qc.invalidateQueries({ queryKey: ["insights"] });
       }
     },
     onError: async (_err, _vars, ctx) => {
       if (!ctx) return;
-      await removeQueued(ctx.queueId);
+      await dropQueued(ctx.queueId);
       qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
     },
   });
@@ -259,15 +265,14 @@ export function useDeleteExpense(): DeleteExpenseMutation {
       qc.setQueryData<ExpensesData>(expensesQueryKey, (old) =>
         mapPages(old, (items) => items.filter((e) => e.id !== id)),
       );
-      let queueId: number;
+      let queueId: number | null = null;
       try {
         queueId = await enqueueWrite({
           op: "delete",
           payload: { id },
         });
-      } catch (err) {
-        qc.setQueryData<ExpensesData>(expensesQueryKey, previous);
-        throw err;
+      } catch {
+        // IDB unavailable — proceed without offline persistence.
       }
       return { queueId, previous };
     },
@@ -283,14 +288,14 @@ export function useDeleteExpense(): DeleteExpenseMutation {
     onSuccess: async (delivered, _vars, ctx) => {
       if (!ctx) return;
       if (delivered) {
-        await removeQueued(ctx.queueId);
+        await dropQueued(ctx.queueId);
         await qc.invalidateQueries({ queryKey: expensesQueryKey });
         await qc.invalidateQueries({ queryKey: ["insights"] });
       }
     },
     onError: async (_err, _vars, ctx) => {
       if (!ctx) return;
-      await removeQueued(ctx.queueId);
+      await dropQueued(ctx.queueId);
       qc.setQueryData<ExpensesData>(expensesQueryKey, ctx.previous);
     },
   });

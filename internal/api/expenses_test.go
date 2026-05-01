@@ -110,6 +110,49 @@ func TestHandleListExpenses(t *testing.T) {
 	})
 }
 
+func TestHandleGetExpense(t *testing.T) {
+	env := newTestEnv(t)
+	created, err := env.db.InsertExpense(42, "Find me", "Other", time.Now(), env.user.ID)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	t.Run("happy path", func(t *testing.T) {
+		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses/"+itoa(created.ID), nil))
+		req.SetPathValue("id", itoa(created.ID))
+		rec := httptest.NewRecorder()
+		env.server.handleGetExpense(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status: got %d want 200 (body=%q)", rec.Code, rec.Body.String())
+		}
+		var got models.Expense
+		decodeBody(t, rec, &got)
+		if got.ID != created.ID || got.Description != "Find me" {
+			t.Fatalf("got %+v", got)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses/99999", nil))
+		req.SetPathValue("id", "99999")
+		rec := httptest.NewRecorder()
+		env.server.handleGetExpense(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("status: got %d want 404", rec.Code)
+		}
+	})
+
+	t.Run("invalid id", func(t *testing.T) {
+		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses/abc", nil))
+		req.SetPathValue("id", "abc")
+		rec := httptest.NewRecorder()
+		env.server.handleGetExpense(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status: got %d want 400", rec.Code)
+		}
+	})
+}
+
 func TestHandleCreateExpense(t *testing.T) {
 	tests := []struct {
 		name       string

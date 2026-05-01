@@ -32,6 +32,25 @@ type listExpensesResponse struct {
 	NextCursor *string          `json:"nextCursor"`
 }
 
+func (s *Server) handleGetExpense(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	exp, err := s.db.GetExpense(id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "expense not found")
+			return
+		}
+		log.Printf("api: get expense: %v", err)
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, exp)
+}
+
 func (s *Server) handleListExpenses(w http.ResponseWriter, r *http.Request) {
 	limit := defaultPageSize
 	if v := r.URL.Query().Get("limit"); v != "" {
