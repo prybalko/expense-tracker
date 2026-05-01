@@ -107,6 +107,7 @@ export function Feed() {
 
   return (
     <div
+      data-testid="feed-screen"
       style={{
         minHeight: "100vh",
         background: t.bg,

@@ -102,13 +102,13 @@ go build -o expense-tracker ./cmd/server
 
 ## ⚙️ Configuration
 
-| Variable | Description | Default |
-|:---------|:------------|:--------|
-| `PORT` | Server port | `8080` |
-| `DB_PATH` | SQLite database path | `expenses.db` |
-| `SECURE_COOKIE` | Enable secure cookies (HTTPS) | `false` |
-| `ADMIN_USER` | Initial admin username | `admin` |
-| `ADMIN_PASSWORD` | Initial admin password | *Random* |
+| Variable         | Description                   | Default       |
+|:-----------------|:------------------------------|:--------------|
+| `PORT`           | Server port                   | `8080`        |
+| `DB_PATH`        | SQLite database path          | `expenses.db` |
+| `SECURE_COOKIE`  | Enable secure cookies (HTTPS) | `false`       |
+| `ADMIN_USER`     | Initial admin username        | `admin`       |
+| `ADMIN_PASSWORD` | Initial admin password        | *Random*      |
 
 > **Note:** On first run without users, the app creates an admin account. If `ADMIN_PASSWORD` is not set, a random password is printed to the logs.
 
@@ -170,16 +170,20 @@ npm run build
 ### E2E Tests
 
 ```bash
-# Install Playwright browsers (first time)
-go run github.com/playwright-community/playwright-go/cmd/playwright install --with-deps
+# Install the Playwright driver + browsers (first time only).
+# The version MUST match playwright-go in go.mod, otherwise you'll see
+# "please install the driver (vX.Y.Z) first" at test startup.
+go install github.com/playwright-community/playwright-go/cmd/playwright@v0.5200.1
+playwright install            # add --with-deps on Linux to also install OS packages
 
-# Run E2E tests
+# Run E2E tests (the harness builds web/dist on first run)
 go test -v ./e2e/...
 ```
 
-> **Note:** The Playwright suite was written against the legacy HTMX DOM and
-> needs its selectors updated for the new React UI before it can run green
-> again.
+> The suite drives the React UI via Playwright and anchors on `data-testid`
+> attributes the components expose for tests. The harness builds the React
+> bundle into `web/dist` automatically when it's missing or still the
+> placeholder, so the first run takes longer than subsequent ones.
 
 ---
 

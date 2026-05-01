@@ -92,6 +92,7 @@ export function TabBar({ current, onNavigate, onAdd }: Props) {
         type="button"
         onClick={onAdd}
         aria-label="Add expense"
+        data-testid="fab-add"
         style={{
           width: 56,
           height: 56,

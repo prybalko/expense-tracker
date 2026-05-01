@@ -2,13 +2,18 @@ package e2e
 
 import (
 	"expense-tracker/internal/storage"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/playwright-community/playwright-go"
 	"github.com/stretchr/testify/suite"
 )
 
-// E2ETestSuite provides a test suite for end-to-end tests
+// E2ETestSuite drives the Playwright-backed end-to-end suite against the
+// React UI. Selectors are anchored on data-testid attributes the components
+// expose specifically for tests; emoji glyphs and class names are not stable
+// targets in the new design.
 type E2ETestSuite struct {
 	suite.Suite
 	pw      *playwright.Playwright
@@ -17,7 +22,6 @@ type E2ETestSuite struct {
 	expect  playwright.PlaywrightAssertions
 }
 
-// SetupSuite runs once before all tests
 func (s *E2ETestSuite) SetupSuite() {
 	pw, err := playwright.Run()
 	s.Require().NoError(err, "could not launch playwright")
@@ -30,7 +34,6 @@ func (s *E2ETestSuite) SetupSuite() {
 	s.expect = playwright.NewPlaywrightAssertions()
 }
 
-// TearDownSuite runs once after all tests
 func (s *E2ETestSuite) TearDownSuite() {
 	if s.browser != nil {
 		s.browser.Close()
@@ -40,408 +43,354 @@ func (s *E2ETestSuite) TearDownSuite() {
 	}
 }
 
-// SetupTest runs before each test
 func (s *E2ETestSuite) SetupTest() {
-	// Clear the database before each test
 	db, err := storage.NewDB(dbPath)
 	s.Require().NoError(err, "could not open database for cleanup")
 	err = db.ClearExpenses()
 	s.Require().NoError(err, "could not clear expenses")
 	db.Close()
 
-	page, err := s.browser.NewPage()
+	// Workbox runtimeCaching uses StaleWhileRevalidate for /api/insights and
+	// /api/expenses, so a freshly-revalidating fetch hands React Query the
+	// stale body before the new one lands. The new body updates the SW cache
+	// but doesn't trigger another React Query subscriber notification, so
+	// the Hero stays on the old total. Blocking the SW per-context skips the
+	// whole layer for tests.
+	ctx, err := s.browser.NewContext(playwright.BrowserNewContextOptions{
+		ServiceWorkers: playwright.ServiceWorkerPolicyBlock,
+	})
+	s.Require().NoError(err, "could not create context")
+
+	page, err := ctx.NewPage()
 	s.Require().NoError(err, "could not create page")
 	s.page = page
-	s.page.SetDefaultTimeout(1000)
+	// React renders + TanStack queries + bundle parse take longer than the
+	// previous HTMX server-rendered flow; bump from the old 1s.
+	s.page.SetDefaultTimeout(5000)
 
 	_, err = s.page.Goto(appURL)
 	s.Require().NoError(err, "could not navigate to app")
 }
 
-// TearDownTest runs after each test
 func (s *E2ETestSuite) TearDownTest() {
 	if s.page != nil {
 		s.page.Close()
 	}
 }
 
+func tid(id string) string {
+	return fmt.Sprintf("[data-testid=%q]", id)
+}
+
 func (s *E2ETestSuite) login() {
-	// Wait for login form
-	err := s.expect.Locator(s.page.Locator(".login-form")).ToBeVisible()
+	err := s.expect.Locator(s.page.Locator(tid("login-form"))).ToBeVisible()
 	s.Require().NoError(err, "login form not visible")
 
-	// Fill in credentials
-	err = s.page.Locator("input[name=username]").Fill("testuser")
+	err = s.page.Locator(tid("login-username")).Fill("testuser")
 	s.Require().NoError(err, "failed to fill username")
 
-	err = s.page.Locator("input[name=password]").Fill("testpass123")
+	err = s.page.Locator(tid("login-password")).Fill("testpass123")
 	s.Require().NoError(err, "failed to fill password")
 
-	// Submit login
-	err = s.page.Locator(".login-btn").Click()
+	err = s.page.Locator(tid("login-submit")).Click()
 	s.Require().NoError(err, "failed to click login")
 
-	// Wait for redirect to expenses page
-	err = s.expect.Locator(s.page.Locator(".list-screen")).ToBeVisible()
-	s.Require().NoError(err, "did not redirect to expenses page after login")
+	err = s.expect.Locator(s.page.Locator(tid("feed-screen"))).ToBeVisible()
+	s.Require().NoError(err, "did not redirect to feed after login")
+}
+
+// pressKeys taps each character on the in-app keypad. "." maps to the
+// dedicated decimal key.
+func (s *E2ETestSuite) pressKeys(keys string) {
+	for _, r := range keys {
+		key := string(r)
+		if key == "." {
+			key = "dot"
+		}
+		err := s.page.Locator(tid("keypad-" + key)).Click()
+		s.Require().NoError(err, "failed to click keypad key %s", key)
+	}
+}
+
+// dayISO returns YYYY-MM-DD for the Nth day of the current month, used to
+// build calendar-day testids for the date sheet.
+func dayISO(day int) string {
+	now := time.Now()
+	return fmt.Sprintf("%04d-%02d-%02d", now.Year(), int(now.Month()), day)
 }
 
 func (s *E2ETestSuite) TestCompleteUserFlow() {
-	// Login
 	s.login()
 
-	// Verify Homepage
-	err := s.expect.Locator(s.page.Locator(".summary small")).ToHaveText("Spent this month")
-	s.Require().NoError(err, "homepage assertion failed")
+	err := s.expect.Locator(s.page.Locator(tid("hero-label"))).ToHaveText("spent this month")
+	s.Require().NoError(err, "hero label mismatch")
 
-	// Create Expense - Click add button
-	err = s.page.Locator(".fab-add").Click()
+	err = s.page.Locator(tid("fab-add")).Click()
 	s.Require().NoError(err, "failed to click add button")
 
-	// Wait for modal
-	err = s.expect.Locator(s.page.Locator("#expense-modal[open]")).ToBeVisible()
-	s.Require().NoError(err, "expense modal not visible")
+	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).ToBeVisible()
+	s.Require().NoError(err, "entry form not visible")
 
-	// Enter Amount: 12.50 using keypad
-	keys := []string{"1", "2", ".", "5", "0"}
-	for _, key := range keys {
-		err = s.page.Locator("#expense-modal button:text-is('" + key + "')").Click()
-		s.Require().NoError(err, "failed to click key %s", key)
-	}
+	s.pressKeys("12.50")
 
-	// Verify amount display
-	err = s.expect.Locator(s.page.Locator("#modal-display-amount")).ToHaveText("12.50")
+	err = s.expect.Locator(s.page.Locator(tid("entry-amount"))).ToHaveAttribute("data-amount", "12.50")
 	s.Require().NoError(err, "amount display mismatch")
 
-	// Fill description
-	err = s.page.Locator("#modal-description").Fill("Lunch Test")
-	s.Require().NoError(err, "failed to fill description")
+	err = s.page.Locator(tid("entry-note")).Fill("Lunch Test")
+	s.Require().NoError(err, "failed to fill note")
 
-	// Select category using the new category picker
-	err = s.page.Locator(".selector").Nth(1).Click() // Second selector is the category one
-	s.Require().NoError(err, "failed to open category picker")
+	err = s.page.Locator(tid("category-tile-groceries")).Click()
+	s.Require().NoError(err, "failed to select Groceries category")
 
-	err = s.expect.Locator(s.page.Locator("#modal-category-picker.open")).ToBeVisible()
-	s.Require().NoError(err, "category picker modal not visible")
-
-	err = s.page.Locator(".category-option").GetByText("Groceries", playwright.LocatorGetByTextOptions{Exact: playwright.Bool(true)}).Click()
-	s.Require().NoError(err, "failed to select category")
-
-	// Submit
-	err = s.page.Locator("#expense-modal button.submit").Click()
+	err = s.page.Locator(tid("entry-submit")).Click()
 	s.Require().NoError(err, "failed to submit expense")
 
-	// Verify in List - Wait for expense item to appear
-	err = s.expect.Locator(s.page.Locator(".expense-item")).ToHaveCount(1)
-	s.Require().NoError(err, "expense item count mismatch")
+	// Form route closes; feed regains focus.
+	err = s.expect.Locator(s.page.Locator(tid("feed-screen"))).ToBeVisible()
+	s.Require().NoError(err, "did not return to feed after submit")
 
-	item := s.page.Locator(".expense-item").First()
-	err = s.expect.Locator(item.Locator(".expense-details strong")).ToHaveText("Lunch Test")
-	s.Require().NoError(err, "description mismatch")
+	err = s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(1)
+	s.Require().NoError(err, "expected exactly 1 expense row")
 
-	err = s.expect.Locator(item.Locator(".expense-amount")).ToContainText("12.50")
-	s.Require().NoError(err, "amount mismatch")
+	row := s.page.Locator(tid("expense-row")).First()
+	err = s.expect.Locator(row.Locator(tid("expense-row-desc"))).ToHaveText("Lunch Test")
+	s.Require().NoError(err, "row description mismatch")
 
-	// Verify category icon matches (groceries = 🛒)
-	err = s.expect.Locator(item.Locator(".cat-icon")).ToContainText("🛒")
-	s.Require().NoError(err, "category icon mismatch, expected groceries icon 🛒")
+	err = s.expect.Locator(row.Locator(tid("expense-row-amount"))).ToContainText("12.50")
+	s.Require().NoError(err, "row amount mismatch")
+
+	err = s.expect.Locator(row).ToHaveAttribute("data-cat-slug", "groceries")
+	s.Require().NoError(err, "row category slug mismatch")
 }
 
 func (s *E2ETestSuite) TestAddExpenseToBlankList() {
-	// Login
 	s.login()
 
-	// Verify the list is blank initially (no expense items)
-	count, err := s.page.Locator(".expense-item").Count()
-	s.Require().NoError(err, "failed to count expense items")
-	s.Require().Equal(0, count, "expected list to be blank, but found %d items", count)
+	count, err := s.page.Locator(tid("expense-row")).Count()
+	s.Require().NoError(err, "failed to count expense rows")
+	s.Require().Equal(0, count, "expected blank list, got %d rows", count)
 
-	// Verify total is 0.00
-	err = s.expect.Locator(s.page.Locator(".total")).ToContainText("0.00")
-	s.Require().NoError(err, "expected total to be 0.00")
+	err = s.expect.Locator(s.page.Locator(tid("hero-total"))).ToContainText("0.00")
+	s.Require().NoError(err, "hero total should be 0.00 on blank list")
 
-	// Click the "+" button to add an expense
-	err = s.page.Locator(".fab-add").Click()
+	err = s.page.Locator(tid("fab-add")).Click()
 	s.Require().NoError(err, "failed to click add button")
 
-	// Wait for the expense modal to appear
-	err = s.expect.Locator(s.page.Locator("#expense-modal[open]")).ToBeVisible()
-	s.Require().NoError(err, "expense modal not visible")
+	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).ToBeVisible()
+	s.Require().NoError(err, "entry form not visible")
 
-	// Set the amount to 25.99 using the keypad
-	keys := []string{"2", "5", ".", "9", "9"}
-	for _, key := range keys {
-		err = s.page.Locator("#expense-modal button:text-is('" + key + "')").Click()
-		s.Require().NoError(err, "failed to click key %s", key)
-	}
+	s.pressKeys("25.99")
 
-	// Verify the amount is displayed correctly
-	err = s.expect.Locator(s.page.Locator("#modal-display-amount")).ToHaveText("25.99")
-	s.Require().NoError(err, "amount display should show 25.99")
+	err = s.expect.Locator(s.page.Locator(tid("entry-amount"))).ToHaveAttribute("data-amount", "25.99")
+	s.Require().NoError(err, "entry amount should display 25.99")
 
-	// Save the expense by clicking the submit button (✓)
-	err = s.page.Locator("#expense-modal button.submit").Click()
+	err = s.page.Locator(tid("entry-submit")).Click()
 	s.Require().NoError(err, "failed to submit expense")
 
-	// Verify the expense is visible in the list
-	err = s.expect.Locator(s.page.Locator(".expense-item")).ToHaveCount(1)
-	s.Require().NoError(err, "expected exactly 1 expense item in the list")
+	err = s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(1)
+	s.Require().NoError(err, "expected exactly 1 expense row")
 
-	// Verify the amount is displayed in the list
-	err = s.expect.Locator(s.page.Locator(".expense-amount")).ToContainText("25.99")
-	s.Require().NoError(err, "expense amount should be visible in the list")
+	err = s.expect.Locator(s.page.Locator(tid("expense-row-amount"))).ToContainText("25.99")
+	s.Require().NoError(err, "row amount should be 25.99")
 
-	// Verify the total is updated
-	err = s.expect.Locator(s.page.Locator(".total")).ToContainText("25.99")
-	s.Require().NoError(err, "total should be updated to 25.99")
+	err = s.expect.Locator(s.page.Locator(tid("hero-total"))).ToContainText("25.99")
+	s.Require().NoError(err, "hero total should reflect 25.99")
 
-	// Verify default category icon (groceries = 🛒)
-	item := s.page.Locator(".expense-item").First()
-	err = s.expect.Locator(item.Locator(".cat-icon")).ToContainText("🛒")
-	s.Require().NoError(err, "category icon mismatch, expected default groceries icon 🛒")
+	// Default category is the first declared (Groceries / slug=groceries).
+	err = s.expect.Locator(s.page.Locator(tid("expense-row")).First()).ToHaveAttribute("data-cat-slug", "groceries")
+	s.Require().NoError(err, "default category slug should be groceries")
 }
 
 func (s *E2ETestSuite) TestEditExpenseFlow() {
-	// Login
 	s.login()
 
-	// 1. Add an expense to edit later
-	err := s.page.Locator(".fab-add").Click()
+	// 1. Create an expense to edit, picking the Transport category and the 1st
+	//    of the current month so we can assert both stick across edits.
+	err := s.page.Locator(tid("fab-add")).Click()
 	s.Require().NoError(err, "failed to click add button")
 
-	err = s.expect.Locator(s.page.Locator("#expense-form")).ToBeVisible()
-	s.Require().NoError(err, "expense form not visible")
+	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).ToBeVisible()
+	s.Require().NoError(err, "entry form not visible")
 
-	// Select "transport" category (non-default) using the new category picker
-	err = s.page.Locator(".selector").Nth(1).Click() // Second selector is the category one
-	s.Require().NoError(err, "failed to open category picker")
+	err = s.page.Locator(tid("category-tile-transport")).Click()
+	s.Require().NoError(err, "failed to select Transport category")
 
-	err = s.expect.Locator(s.page.Locator("#modal-category-picker.open")).ToBeVisible()
-	s.Require().NoError(err, "category picker modal not visible")
-
-	err = s.page.Locator(".category-option").GetByText("Transport", playwright.LocatorGetByTextOptions{Exact: playwright.Bool(true)}).Click()
-	s.Require().NoError(err, "failed to select category")
-
-	// Set date to 1st of current month using the custom date picker
-	// 1. Open date picker
-	err = s.page.Locator("#expense-modal .selector").First().Click() // The first selector is the date one
+	// Open date sheet, pick the 1st, commit with Done.
+	err = s.page.Locator(tid("date-pill")).Click()
 	s.Require().NoError(err, "failed to open date picker")
 
-	// 2. Wait for modal
-	err = s.expect.Locator(s.page.Locator("#modal-date-picker.open")).ToBeVisible()
-	s.Require().NoError(err, "date picker modal not visible")
+	err = s.expect.Locator(s.page.Locator(tid("date-sheet"))).ToBeVisible()
+	s.Require().NoError(err, "date sheet not visible")
 
-	// 3. Select the 1st
-	err = s.page.Locator("#modal-calendar-grid .calendar-day").GetByText("1", playwright.LocatorGetByTextOptions{Exact: playwright.Bool(true)}).Click()
-	s.Require().NoError(err, "failed to select date 1")
+	err = s.page.Locator(tid("calendar-day-" + dayISO(1))).Click()
+	s.Require().NoError(err, "failed to pick day 1")
 
-	// 4. Verify modal closed
-	err = s.expect.Locator(s.page.Locator("#modal-date-picker.open")).Not().ToBeVisible()
-	s.Require().NoError(err, "date picker modal did not close")
+	err = s.page.Locator(tid("date-sheet-done")).Click()
+	s.Require().NoError(err, "failed to commit date selection")
 
-	// Set amount to 50.00
-	keys := []string{"5", "0", ".", "0", "0"}
-	for _, key := range keys {
-		err = s.page.Locator("#expense-modal button:text-is('" + key + "')").Click()
-		s.Require().NoError(err, "failed to click key %s", key)
-	}
+	err = s.expect.Locator(s.page.Locator(tid("date-sheet"))).Not().ToBeVisible()
+	s.Require().NoError(err, "date sheet did not close after Done")
 
-	// Fill description
-	err = s.page.Locator("#modal-description").Fill("Original Expense")
-	s.Require().NoError(err, "failed to fill description")
+	s.pressKeys("50.00")
 
-	// Submit
-	err = s.page.Locator("#expense-modal button.submit").Click()
+	err = s.page.Locator(tid("entry-note")).Fill("Original Expense")
+	s.Require().NoError(err, "failed to fill note")
+
+	err = s.page.Locator(tid("entry-submit")).Click()
 	s.Require().NoError(err, "failed to submit expense")
 
-	// Wait for modal to close
-	err = s.expect.Locator(s.page.Locator("#expense-modal[open]")).Not().ToBeVisible()
-	s.Require().NoError(err, "modal should be closed after submit")
+	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).Not().ToBeVisible()
+	s.Require().NoError(err, "entry form should close after submit")
 
-	// Verify it exists in the list
-	err = s.expect.Locator(s.page.Locator(".expense-item")).ToHaveCount(1)
-	s.Require().NoError(err, "expense item not found in list")
+	err = s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(1)
+	s.Require().NoError(err, "expected 1 row after create")
 
-	item := s.page.Locator(".expense-item").First()
-	err = s.expect.Locator(item.Locator(".expense-details strong")).ToHaveText("Original Expense")
-	s.Require().NoError(err, "original description not found")
+	row := s.page.Locator(tid("expense-row")).First()
+	err = s.expect.Locator(row.Locator(tid("expense-row-desc"))).ToHaveText("Original Expense")
+	s.Require().NoError(err, "original description mismatch")
 
-	err = s.expect.Locator(item.Locator(".expense-amount")).ToContainText("50.00")
-	s.Require().NoError(err, "original amount not found")
+	err = s.expect.Locator(row.Locator(tid("expense-row-amount"))).ToContainText("50.00")
+	s.Require().NoError(err, "original amount mismatch")
 
-	// Verify category icon matches (transport = 🚌)
-	err = s.expect.Locator(item.Locator(".cat-icon")).ToContainText("🚌")
-	s.Require().NoError(err, "category icon mismatch, expected transport icon 🚌")
+	err = s.expect.Locator(row).ToHaveAttribute("data-cat-slug", "transport")
+	s.Require().NoError(err, "original category slug mismatch")
 
-	// 2. Click on the item to edit (opens modal)
-	err = item.Click()
-	s.Require().NoError(err, "failed to click expense item")
+	// 2. Open it for editing.
+	err = row.Click()
+	s.Require().NoError(err, "failed to click row")
 
-	// Verify edit modal is visible
-	err = s.expect.Locator(s.page.Locator("#expense-modal[open]")).ToBeVisible()
-	s.Require().NoError(err, "edit modal not visible")
+	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).ToBeVisible()
+	s.Require().NoError(err, "edit form not visible")
 
-	// Verify form is populated
-	err = s.expect.Locator(s.page.Locator("#modal-description")).ToHaveValue("Original Expense")
-	s.Require().NoError(err, "description not populated")
+	err = s.expect.Locator(s.page.Locator(tid("entry-note"))).ToHaveValue("Original Expense")
+	s.Require().NoError(err, "note not populated for edit")
 
-	// 3. Edit the expense
-	// Delete amount using backspace button (in modal)
-	// We need to clear "50" -> the modal shows without trailing zeros
-	for range 2 {
-		err = s.page.Locator("#expense-modal .backspace-btn").Click()
-		s.Require().NoError(err, "failed to click delete button")
+	// 3. Clear "50.00" by hammering del five times — the amount string is the
+	//    full toFixed(2) form once the row exists, not "50".
+	for range 5 {
+		err = s.page.Locator(tid("keypad-del")).Click()
+		s.Require().NoError(err, "failed to press del")
 	}
-
-	// Ensure it is 0
-	err = s.expect.Locator(s.page.Locator("#modal-display-amount")).ToHaveText("0")
+	err = s.expect.Locator(s.page.Locator(tid("entry-amount"))).ToHaveAttribute("data-amount", "0")
 	s.Require().NoError(err, "amount not cleared")
 
-	// Set new amount: 40.00
-	newKeys := []string{"4", "0", ".", "0", "0"}
-	for _, key := range newKeys {
-		err = s.page.Locator("#expense-modal button:text-is('" + key + "')").Click()
-		s.Require().NoError(err, "failed to click key %s", key)
-	}
+	s.pressKeys("40.00")
 
-	// Change description
-	err = s.page.Locator("#modal-description").Fill("Updated Expense")
-	s.Require().NoError(err, "failed to update description")
+	err = s.page.Locator(tid("entry-note")).Fill("Updated Expense")
+	s.Require().NoError(err, "failed to update note")
 
-	// Change date to 2nd using picker
-	err = s.page.Locator("#expense-modal .selector").First().Click()
-	s.Require().NoError(err, "failed to open date picker for edit")
+	// Bump the date forward by one day (calendar always has at least 2 days
+	// since we created the expense on day 1; for day-1 runs the sheet allows
+	// picking day 2 which is still in the past or today).
+	err = s.page.Locator(tid("date-pill")).Click()
+	s.Require().NoError(err, "failed to reopen date picker")
 
-	err = s.expect.Locator(s.page.Locator("#modal-date-picker.open")).ToBeVisible()
-	s.Require().NoError(err, "date picker modal not visible")
+	err = s.expect.Locator(s.page.Locator(tid("date-sheet"))).ToBeVisible()
+	s.Require().NoError(err, "date sheet not visible on edit")
 
-	// Pick 2nd
-	err = s.page.Locator("#modal-calendar-grid .calendar-day").GetByText("2", playwright.LocatorGetByTextOptions{Exact: playwright.Bool(true)}).Click()
-	s.Require().NoError(err, "failed to select date 2")
+	err = s.page.Locator(tid("calendar-day-" + dayISO(2))).Click()
+	s.Require().NoError(err, "failed to pick day 2")
 
-	// Save changes
-	err = s.page.Locator("#expense-modal button.submit").Click()
-	s.Require().NoError(err, "failed to save changes")
+	err = s.page.Locator(tid("date-sheet-done")).Click()
+	s.Require().NoError(err, "failed to commit edited date")
 
-	// Ensure modal is closed
-	err = s.expect.Locator(s.page.Locator("#expense-modal[open]")).Not().ToBeVisible()
-	s.Require().NoError(err, "expense modal still visible after submit")
+	err = s.page.Locator(tid("entry-submit")).Click()
+	s.Require().NoError(err, "failed to save edits")
 
-	// 4. Verify changes in list
-	// Wait for list to update
-	newItem := s.page.Locator(".expense-item").First()
+	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).Not().ToBeVisible()
+	s.Require().NoError(err, "entry form should close after edit")
 
-	err = s.expect.Locator(newItem.Locator(".expense-details strong")).ToHaveText("Updated Expense")
-	s.Require().NoError(err, "updated description not found")
+	// 4. Verify the row reflects the edit.
+	updated := s.page.Locator(tid("expense-row")).First()
+	err = s.expect.Locator(updated.Locator(tid("expense-row-desc"))).ToHaveText("Updated Expense")
+	s.Require().NoError(err, "updated description mismatch")
 
-	err = s.expect.Locator(newItem.Locator(".expense-amount")).ToContainText("40.00")
-	s.Require().NoError(err, "updated amount not found")
+	err = s.expect.Locator(updated.Locator(tid("expense-row-amount"))).ToContainText("40.00")
+	s.Require().NoError(err, "updated amount mismatch")
 
-	// Verify category icon still matches (transport = 🚌)
-	err = s.expect.Locator(newItem.Locator(".cat-icon")).ToContainText("🚌")
-	s.Require().NoError(err, "category icon mismatch after edit, expected transport icon 🚌")
+	err = s.expect.Locator(updated).ToHaveAttribute("data-cat-slug", "transport")
+	s.Require().NoError(err, "category slug should remain transport")
 
-	// Verify total reflects the change (was 50.00, now 40.00)
-	err = s.expect.Locator(s.page.Locator(".total")).ToContainText("40.00")
-	s.Require().NoError(err, "total not updated")
+	err = s.expect.Locator(s.page.Locator(tid("hero-total"))).ToContainText("40.00")
+	s.Require().NoError(err, "hero total not updated to 40.00")
 }
 
 func (s *E2ETestSuite) TestDeleteExpenseFlow() {
-	// Login
 	s.login()
 
-	// 1. Add an expense to delete
-	err := s.page.Locator(".fab-add").Click()
+	err := s.page.Locator(tid("fab-add")).Click()
 	s.Require().NoError(err, "failed to click add button")
 
-	err = s.expect.Locator(s.page.Locator("#expense-modal[open]")).ToBeVisible()
-	s.Require().NoError(err, "expense modal not visible")
+	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).ToBeVisible()
+	s.Require().NoError(err, "entry form not visible")
 
-	// Set amount to 99.99
-	keys := []string{"9", "9", ".", "9", "9"}
-	for _, key := range keys {
-		err = s.page.Locator("#expense-modal button:text-is('" + key + "')").Click()
-		s.Require().NoError(err, "failed to click key %s", key)
-	}
+	s.pressKeys("99.99")
 
-	// Fill description
-	err = s.page.Locator("#modal-description").Fill("To Be Deleted")
-	s.Require().NoError(err, "failed to fill description")
+	err = s.page.Locator(tid("entry-note")).Fill("To Be Deleted")
+	s.Require().NoError(err, "failed to fill note")
 
-	// Submit
-	err = s.page.Locator("#expense-modal button.submit").Click()
+	err = s.page.Locator(tid("entry-submit")).Click()
 	s.Require().NoError(err, "failed to submit expense")
 
-	// Wait for modal to close
-	err = s.expect.Locator(s.page.Locator("#expense-modal[open]")).Not().ToBeVisible()
-	s.Require().NoError(err, "modal should be closed after submit")
+	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).Not().ToBeVisible()
+	s.Require().NoError(err, "entry form should close after submit")
 
-	// Verify it exists in the list
-	err = s.expect.Locator(s.page.Locator(".expense-item")).ToHaveCount(1)
-	s.Require().NoError(err, "expense item not found in list")
+	err = s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(1)
+	s.Require().NoError(err, "expected 1 row after create")
 
-	item := s.page.Locator(".expense-item").First()
-	err = s.expect.Locator(item.Locator(".expense-details strong")).ToHaveText("To Be Deleted")
-	s.Require().NoError(err, "expense description not found")
+	row := s.page.Locator(tid("expense-row")).First()
+	err = s.expect.Locator(row.Locator(tid("expense-row-desc"))).ToHaveText("To Be Deleted")
+	s.Require().NoError(err, "row description mismatch")
 
-	// Verify total shows our expense
-	err = s.expect.Locator(s.page.Locator(".total")).ToContainText("99.99")
-	s.Require().NoError(err, "total should show 99.99")
+	err = s.expect.Locator(s.page.Locator(tid("hero-total"))).ToContainText("99.99")
+	s.Require().NoError(err, "hero total should show 99.99")
 
-	// 2. Click on the item to edit (opens modal)
-	err = item.Click()
-	s.Require().NoError(err, "failed to click expense item")
+	err = row.Click()
+	s.Require().NoError(err, "failed to click row to edit")
 
-	// Verify edit modal is visible
-	err = s.expect.Locator(s.page.Locator("#expense-modal[open]")).ToBeVisible()
-	s.Require().NoError(err, "edit modal not visible")
+	err = s.expect.Locator(s.page.Locator(tid("entry-delete"))).ToBeVisible()
+	s.Require().NoError(err, "delete button should be visible on edit")
 
-	// Verify the remove button is visible (only on edit mode)
-	err = s.expect.Locator(s.page.Locator("#modal-remove-btn")).ToBeVisible()
-	s.Require().NoError(err, "remove button should be visible on edit mode")
-
-	// 3. Click the remove button and accept the confirmation
+	// EntryForm.onDelete uses window.confirm — Playwright surfaces it as a
+	// dialog event, accepted via OnDialog before the click.
 	s.page.OnDialog(func(dialog playwright.Dialog) {
 		dialog.Accept()
 	})
 
-	err = s.page.Locator("#modal-remove-btn").Click()
-	s.Require().NoError(err, "failed to click remove button")
+	err = s.page.Locator(tid("entry-delete")).Click()
+	s.Require().NoError(err, "failed to click delete")
 
-	// 4. Verify we're back on the list and the expense is gone
-	err = s.expect.Locator(s.page.Locator(".list-screen")).ToBeVisible()
-	s.Require().NoError(err, "should be back on list screen")
+	err = s.expect.Locator(s.page.Locator(tid("feed-screen"))).ToBeVisible()
+	s.Require().NoError(err, "should be back on feed after delete")
 
-	// Verify the expense is deleted (no items in list)
-	err = s.expect.Locator(s.page.Locator(".expense-item")).ToHaveCount(0)
-	s.Require().NoError(err, "expense should be deleted")
+	err = s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(0)
+	s.Require().NoError(err, "expense row should be gone")
 
-	// Verify total is back to 0.00
-	err = s.expect.Locator(s.page.Locator(".total")).ToContainText("0.00")
-	s.Require().NoError(err, "total should be 0.00 after deletion")
+	err = s.expect.Locator(s.page.Locator(tid("hero-total"))).ToContainText("0.00")
+	s.Require().NoError(err, "hero total should be 0.00 after delete")
 }
 
 func (s *E2ETestSuite) TestDeleteButtonNotVisibleOnCreate() {
-	// Login
 	s.login()
 
-	// Open create modal
-	err := s.page.Locator(".fab-add").Click()
+	err := s.page.Locator(tid("fab-add")).Click()
 	s.Require().NoError(err, "failed to click add button")
 
-	err = s.expect.Locator(s.page.Locator("#expense-modal[open]")).ToBeVisible()
-	s.Require().NoError(err, "expense modal not visible")
+	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).ToBeVisible()
+	s.Require().NoError(err, "entry form not visible")
 
-	// Verify the remove button is NOT visible on create mode (hidden via display:none)
-	err = s.expect.Locator(s.page.Locator("#modal-remove-btn")).Not().ToBeVisible()
-	s.Require().NoError(err, "remove button should not be visible on create mode")
+	// On create, the trash button is not rendered at all (a placeholder div
+	// fills its slot in the layout), so it should not be present in the DOM.
+	count, err := s.page.Locator(tid("entry-delete")).Count()
+	s.Require().NoError(err, "failed to count delete buttons")
+	s.Require().Equal(0, count, "delete button should not exist on create, found %d", count)
 
-	// Verify the backspace button IS visible
-	err = s.expect.Locator(s.page.Locator("#expense-modal .backspace-btn")).ToBeVisible()
-	s.Require().NoError(err, "backspace button should be visible")
+	// The keypad's del key is always present.
+	err = s.expect.Locator(s.page.Locator(tid("keypad-del"))).ToBeVisible()
+	s.Require().NoError(err, "keypad del key should be visible")
 }
 
-// TestE2ESuite runs the e2e test suite
+// TestE2ESuite is the entry point go test discovers.
 func TestE2ESuite(t *testing.T) {
 	suite.Run(t, new(E2ETestSuite))
 }

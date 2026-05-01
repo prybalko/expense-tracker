@@ -172,12 +172,14 @@ export function CalendarGrid({
           const sel = sameYMD(d, selected);
           const isToday = sameYMD(d, today);
           const isFuture = d > today;
+          const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
           return (
             <button
               key={i}
               type="button"
               disabled={isFuture}
               onClick={() => onChange(d)}
+              data-testid={`calendar-day-${iso}`}
               style={{
                 height: cellSize,
                 borderRadius: cellSize / 2,

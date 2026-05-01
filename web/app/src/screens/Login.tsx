@@ -143,7 +143,7 @@ export function Login() {
         <p style={{ margin: "6px 0 22px", fontSize: 13, color: t.ink2 }}>
           Sign in to continue
         </p>
-        <form onSubmit={onSubmit}>
+        <form onSubmit={onSubmit} data-testid="login-form">
           <label
             style={{
               display: "block",
@@ -165,6 +165,7 @@ export function Login() {
             autoCapitalize="none"
             autoCorrect="off"
             required
+            data-testid="login-username"
             style={{
               width: "100%",
               padding: "14px",
@@ -198,6 +199,7 @@ export function Login() {
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
             required
+            data-testid="login-password"
             style={{
               width: "100%",
               padding: "14px",
@@ -225,6 +227,7 @@ export function Login() {
           <button
             type="submit"
             disabled={submitting || !username.trim() || !password}
+            data-testid="login-submit"
             style={{
               marginTop: 18,
               width: "100%",

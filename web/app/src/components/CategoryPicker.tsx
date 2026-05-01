@@ -109,6 +109,7 @@ export function CategoryPicker({ value, onChange, usageCounts = {} }: Props) {
                   key={cat.label}
                   type="button"
                   onClick={() => onChange(cat.label)}
+                  data-testid={`category-tile-${cat.slug}`}
                   style={{
                     display: "flex",
                     flexDirection: "column",

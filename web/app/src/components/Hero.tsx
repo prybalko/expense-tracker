@@ -62,6 +62,7 @@ export function Hero({
         ) : null}
       </div>
       <div
+        data-testid="hero-total"
         style={{
           display: "flex",
           alignItems: "baseline",
@@ -84,7 +85,10 @@ export function Hero({
           .{dec}
         </span>
       </div>
-      <div style={{ fontSize: 12, color: t.ink2, marginTop: 6 }}>
+      <div
+        data-testid="hero-label"
+        style={{ fontSize: 12, color: t.ink2, marginTop: 6 }}
+      >
         spent this month
       </div>
     </div>

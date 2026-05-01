@@ -49,6 +49,7 @@ export function Keypad({ onPress }: Props) {
           key={k}
           type="button"
           onClick={() => onPress(k)}
+          data-testid={`keypad-${k === "." ? "dot" : k}`}
           style={{
             padding: "12px 0",
             background: t.cardAlt,

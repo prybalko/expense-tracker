@@ -17,6 +17,8 @@ export function ExpenseRow({ expense, slug, isFirst = false, onClick }: Props) {
     <button
       type="button"
       onClick={() => onClick?.(expense)}
+      data-testid="expense-row"
+      data-cat-slug={slug}
       style={{
         width: "100%",
         display: "flex",
@@ -47,7 +49,10 @@ export function ExpenseRow({ expense, slug, isFirst = false, onClick }: Props) {
         <CategoryGlyph slug={slug} size={20} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 15, fontWeight: 500 }}>
+        <div
+          data-testid="expense-row-desc"
+          style={{ fontSize: 15, fontWeight: 500 }}
+        >
           {expense.description || expense.category}
         </div>
         <div style={{ fontSize: 12, color: t.ink2, marginTop: 2 }}>
@@ -56,6 +61,7 @@ export function ExpenseRow({ expense, slug, isFirst = false, onClick }: Props) {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span
+          data-testid="expense-row-amount"
           style={{
             fontSize: 15,
             fontWeight: 600,

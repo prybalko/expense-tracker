@@ -59,6 +59,7 @@ export function DatePickerPill({
     <button
       type="button"
       onClick={openSheet}
+      data-testid="date-pill"
       style={{
         width: "100%",
         display: "flex",
@@ -136,6 +137,7 @@ export function DatePickerPill({
       onClick={() => setOpen(false)}
     >
       <div
+        data-testid="date-sheet"
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "100%",
@@ -181,6 +183,7 @@ export function DatePickerPill({
           <span style={{ fontSize: 14, fontWeight: 600 }}>Pick date</span>
           <button
             type="button"
+            data-testid="date-sheet-done"
             onClick={() => {
               onChange(draft);
               setOpen(false);

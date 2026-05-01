@@ -159,6 +159,7 @@ function FormBody({
 
   return (
     <div
+      data-testid="entry-form"
       style={{
         position: "relative",
         width: "100%",
@@ -203,6 +204,7 @@ function FormBody({
             type="button"
             onClick={onDelete}
             aria-label="Delete"
+            data-testid="entry-delete"
             style={{
               width: 36,
               height: 36,
@@ -249,6 +251,8 @@ function FormBody({
             EUR
           </div>
           <div
+            data-testid="entry-amount"
+            data-amount={display}
             style={{
               marginTop: 6,
               fontSize: 64,
@@ -316,6 +320,7 @@ function FormBody({
               Note
             </div>
             <input
+              data-testid="entry-note"
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="e.g. Albert Heijn"
@@ -349,6 +354,7 @@ function FormBody({
           type="button"
           onClick={submit}
           disabled={!canSubmit}
+          data-testid="entry-submit"
           style={{
             marginTop: 8,
             width: "100%",
