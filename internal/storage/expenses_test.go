@@ -156,11 +156,15 @@ func (s *ExpenseTestSuite) TestListExpensesAll() {
 	}
 
 	// Insert a pre-multi-user historical row directly (NULL user_id).
-	// InsertExpense always sets a user, so we go around it.
+	// InsertExpense always sets a user, so we go around it. updated_at is
+	// required post-delta-sync — scanExpenses reads it as a non-nullable
+	// field, and a NULL would also leave the legacy row invisible to the
+	// diff endpoint until something bumped it.
 	_, err := s.db.conn.Exec(
-		`INSERT INTO expenses (amount, description, category, date, user_id)
-		 VALUES (?, ?, ?, ?, NULL)`,
+		`INSERT INTO expenses (amount, description, category, date, user_id, updated_at)
+		 VALUES (?, ?, ?, ?, NULL, ?)`,
 		5.00, "Legacy coffee", "Eating Out",
+		time.Date(2018, 6, 15, 9, 0, 0, 0, time.UTC),
 		time.Date(2018, 6, 15, 9, 0, 0, 0, time.UTC),
 	)
 	s.Require().NoError(err)
@@ -197,9 +201,10 @@ func (s *ExpenseTestSuite) TestListExpensesAll() {
 // permanently miscategorised with no way to fix it from the UI.
 func (s *ExpenseTestSuite) TestNullOwnedRowsAreEditableByAnyUser() {
 	res, err := s.db.conn.Exec(
-		`INSERT INTO expenses (amount, description, category, date, user_id)
-		 VALUES (?, ?, ?, ?, NULL)`,
+		`INSERT INTO expenses (amount, description, category, date, user_id, updated_at)
+		 VALUES (?, ?, ?, ?, NULL, ?)`,
 		7.50, "Old lunch", "Eating Out",
+		time.Date(2017, 4, 1, 12, 0, 0, 0, time.UTC),
 		time.Date(2017, 4, 1, 12, 0, 0, 0, time.UTC),
 	)
 	s.Require().NoError(err)
@@ -226,6 +231,147 @@ func (s *ExpenseTestSuite) TestNullOwnedRowsAreEditableByAnyUser() {
 	s.Require().NoError(s.db.DeleteExpense(2, id))
 	_, err = s.db.GetExpense(1, id)
 	s.ErrorContains(err, "no rows")
+}
+
+// TestInsertBumpsUpdatedAt pins the invariant that InsertExpense always
+// returns a non-zero updated_at — the client's lastSyncAt depends on every
+// write emitting a monotonic cursor, so silently leaving this field zero
+// would let a freshly-created row disappear from the Feed diff until the
+// next full reload.
+func (s *ExpenseTestSuite) TestInsertBumpsUpdatedAt() {
+	before := time.Now().Add(-time.Second).UTC()
+	created, err := s.db.InsertExpense(12.50, "Coffee", "Eating Out", time.Now(), 1)
+	s.Require().NoError(err)
+	s.Require().NotNil(created)
+	s.False(created.UpdatedAt.IsZero(), "InsertExpense must set updated_at")
+	s.True(created.UpdatedAt.After(before), "updated_at should be wall-clock now()")
+}
+
+// TestUpdateBumpsUpdatedAt mirrors the insert invariant for edits — without
+// advancing updated_at, a PATCH would be invisible to the delta endpoint
+// and the Feed diff would miss the user's own change made in another tab.
+func (s *ExpenseTestSuite) TestUpdateBumpsUpdatedAt() {
+	created, err := s.db.InsertExpense(10, "Original", "Other", time.Now(), 1)
+	s.Require().NoError(err)
+	originalUpdated := created.UpdatedAt
+	time.Sleep(2 * time.Millisecond)
+	created.Description = "Edited"
+	s.Require().NoError(s.db.UpdateExpense(1, created))
+	s.True(created.UpdatedAt.After(originalUpdated),
+		"UpdateExpense must advance updated_at: %v not after %v",
+		created.UpdatedAt, originalUpdated)
+}
+
+// TestDeleteExpense_SoftDeletes covers the tombstone behavior end-to-end:
+// the row survives in the table with deleted_at set, GetExpense / ListAll
+// filter it out, and ListExpensesChangedSince reports the id in the
+// deletedIds bucket — that combination is what lets the PWA drop the row
+// from its React Query cache on the next Feed sync without a full reload.
+func (s *ExpenseTestSuite) TestDeleteExpense_SoftDeletes() {
+	created, err := s.db.InsertExpense(42, "Bye", "Other", time.Now(), 1)
+	s.Require().NoError(err)
+
+	// Baseline lastSyncAt for the delta query. time.Sleep so the
+	// deleted_at timestamp is strictly greater than `since`.
+	since := time.Now().UTC()
+	time.Sleep(2 * time.Millisecond)
+
+	s.Require().NoError(s.db.DeleteExpense(1, created.ID))
+
+	// Row no longer shows up in read paths.
+	_, err = s.db.GetExpense(1, created.ID)
+	s.Require().ErrorContains(err, "no rows")
+	all, err := s.db.ListExpensesAll(1)
+	s.Require().NoError(err)
+	s.Empty(all)
+
+	// But the changes endpoint reports the id in the deletion bucket.
+	upd, deletedIDs, err := s.db.ListExpensesChangedSince(1, since)
+	s.Require().NoError(err)
+	s.Empty(upd, "deleted rows must not also surface in the updated bucket")
+	s.Require().Len(deletedIDs, 1)
+	s.Equal(created.ID, deletedIDs[0])
+
+	// The raw row still exists — tombstone, not purge.
+	var count int
+	err = s.db.conn.QueryRow(
+		`SELECT COUNT(*) FROM expenses WHERE id = ? AND deleted_at IS NOT NULL`,
+		created.ID,
+	).Scan(&count)
+	s.Require().NoError(err)
+	s.Equal(1, count, "expected the row to remain as a tombstone")
+}
+
+// TestPartialUniqueIndexAllowsReuseAfterSoftDelete documents the index
+// change that had to ship alongside soft-delete: recording "coffee €4 on
+// Monday", deleting it, then recording it again must succeed. The old
+// non-partial unique index on (user_id, date, amount, description) would
+// reject the second insert as a duplicate and permanently block the user
+// from re-entering any expense they had ever deleted.
+func (s *ExpenseTestSuite) TestPartialUniqueIndexAllowsReuseAfterSoftDelete() {
+	date := time.Date(2026, 5, 1, 8, 0, 0, 0, time.UTC)
+	first, err := s.db.InsertExpense(4.50, "Coffee", "Eating Out", date, 1)
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.db.DeleteExpense(1, first.ID))
+
+	// Re-inserting the exact same tuple must succeed — the partial unique
+	// index excludes the tombstone.
+	second, err := s.db.InsertExpense(4.50, "Coffee", "Eating Out", date, 1)
+	s.Require().NoError(err, "second insert after tombstone should not collide")
+	s.NotEqual(first.ID, second.ID, "fresh row should get a new id")
+
+	// But a second identical live row still collides — the uniqueness
+	// guarantee holds for non-deleted rows.
+	_, err = s.db.InsertExpense(4.50, "Coffee", "Eating Out", date, 1)
+	s.ErrorIs(err, ErrDuplicateExpense)
+}
+
+// TestListExpensesChangedSince_InsertsAndUpdates checks both buckets of
+// the diff query: rows whose updated_at moved past `since` land in
+// `updated`, whether they're brand new or pre-existing edits. This is
+// what the client upserts into the React Query cache on every Feed mount.
+func (s *ExpenseTestSuite) TestListExpensesChangedSince_InsertsAndUpdates() {
+	// Row 1 created before the cutoff — should not appear in the diff.
+	old, err := s.db.InsertExpense(10, "Old", "Other", time.Now(), 1)
+	s.Require().NoError(err)
+
+	cutoff := time.Now().UTC()
+	time.Sleep(2 * time.Millisecond)
+
+	// Row 2 inserted after the cutoff — appears as a new entry.
+	fresh, err := s.db.InsertExpense(20, "Fresh", "Other", time.Now(), 1)
+	s.Require().NoError(err)
+
+	// Row 1 edited after the cutoff — now appears as an update.
+	old.Description = "Old edited"
+	s.Require().NoError(s.db.UpdateExpense(1, old))
+
+	upd, deletedIDs, err := s.db.ListExpensesChangedSince(1, cutoff)
+	s.Require().NoError(err)
+	s.Empty(deletedIDs)
+	s.Require().Len(upd, 2)
+
+	descs := map[string]bool{}
+	for _, e := range upd {
+		descs[e.Description] = true
+	}
+	s.True(descs["Fresh"], "expected the newly-inserted row")
+	s.True(descs["Old edited"], "expected the edited row with the new description")
+	_ = fresh
+}
+
+// TestListExpensesChangedSince_BoundaryIsStrict protects the cursor
+// semantics: comparing updated_at > since (not >=) means that passing
+// back the serverTime we just returned does not re-emit any row. If this
+// became >= the Feed would re-process the last-seen row on every sync.
+func (s *ExpenseTestSuite) TestListExpensesChangedSince_BoundaryIsStrict() {
+	created, err := s.db.InsertExpense(10, "Row", "Other", time.Now(), 1)
+	s.Require().NoError(err)
+	upd, deletedIDs, err := s.db.ListExpensesChangedSince(1, created.UpdatedAt)
+	s.Require().NoError(err)
+	s.Empty(upd, "passing back the exact updated_at must not re-emit the row")
+	s.Empty(deletedIDs)
 }
 
 func (s *ExpenseTestSuite) TestListExpensesPagination() {

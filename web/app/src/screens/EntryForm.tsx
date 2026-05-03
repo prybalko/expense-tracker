@@ -12,9 +12,10 @@ import {
   useUpdateExpense,
   useDeleteExpense,
 } from "../hooks/useExpenses";
+import { useErrorBanner } from "../hooks/useErrorBanner";
 import { categories } from "../categories";
 import { getExpense } from "../api/expenses";
-import { ApiError } from "../api/client";
+import { messageForWriteError } from "../api/errors";
 import type { Expense } from "../types";
 
 function toIsoDateTime(d: Date): string {
@@ -51,19 +52,6 @@ function sameCalendarDay(a: Date, b: Date): boolean {
   );
 }
 
-function messageForWriteError(err: unknown): string {
-  if (typeof navigator !== "undefined" && navigator.onLine === false) {
-    return "You're offline. Try again when you're back on a connection.";
-  }
-  if (err instanceof ApiError) {
-    if (err.status === 409) {
-      return "An expense with the same date, amount, and description already exists.";
-    }
-    if (err.message) return err.message;
-  }
-  return "Couldn't save. Please try again.";
-}
-
 type FormProps = {
   isEdit: boolean;
   editingId: number | null;
@@ -95,14 +83,14 @@ function FormBody({
   const [cat, setCat] = useState<string>(initialCategory);
   const [note, setNote] = useState<string>(initialNote);
   const [date, setDate] = useState<Date>(initialDate);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const { showError, clear: clearBannerError } = useErrorBanner();
 
-  // Clear any prior failure as soon as the user starts editing again — stale
-  // error copy from the previous attempt would otherwise stick around through
-  // the next keystroke. Each input handler funnels through these wrappers
-  // instead of calling the raw setters directly.
+  // Clear any lingering banner error as soon as the user starts editing
+  // again — stale copy from the previous attempt should disappear rather
+  // than hang around while they type. Each input handler funnels through
+  // these wrappers instead of calling the raw setters directly.
   const press = (k: KeypadKey) => {
-    setSubmitError(null);
+    clearBannerError();
     setAmt((a) => {
       if (k === "del") return a.slice(0, -1);
       if (k === ".") {
@@ -118,17 +106,17 @@ function FormBody({
   };
 
   const onCatChange = (next: string) => {
-    setSubmitError(null);
+    clearBannerError();
     setCat(next);
   };
 
   const onNoteChange = (next: string) => {
-    setSubmitError(null);
+    clearBannerError();
     setNote(next);
   };
 
   const onDateChange = (next: Date) => {
-    setSubmitError(null);
+    clearBannerError();
     setDate(next);
   };
 
@@ -144,7 +132,7 @@ function FormBody({
   const submit = async () => {
     const v = parseFloat(amt);
     if (!v || submitting) return;
-    setSubmitError(null);
+    clearBannerError();
     // On edit, preserve the original full timestamp when the user hasn't
     // shifted the calendar day. Otherwise we'd silently overwrite the stored
     // time-of-day with "now" on every save (re-ordering the feed and
@@ -176,7 +164,7 @@ function FormBody({
       }
       onClose();
     } catch (err) {
-      setSubmitError(messageForWriteError(err));
+      showError(messageForWriteError(err));
     }
   };
 
@@ -184,12 +172,12 @@ function FormBody({
     if (!isEdit || editingId === null) return;
     if (submitting) return;
     if (!window.confirm("Delete this expense?")) return;
-    setSubmitError(null);
+    clearBannerError();
     try {
       await deleteMutation.mutateAsync(editingId);
       onClose();
     } catch (err) {
-      setSubmitError(messageForWriteError(err));
+      showError(messageForWriteError(err));
     }
   };
 
@@ -409,23 +397,6 @@ function FormBody({
         }}
       >
         <Keypad onPress={press} />
-        {submitError ? (
-          <div
-            data-testid="entry-error"
-            role="alert"
-            style={{
-              marginTop: 8,
-              padding: "10px 14px",
-              borderRadius: 14,
-              background: t.bg,
-              color: t.red,
-              fontSize: 13,
-              textAlign: "center",
-            }}
-          >
-            {submitError}
-          </div>
-        ) : null}
         <button
           type="button"
           onClick={submit}

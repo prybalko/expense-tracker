@@ -18,9 +18,9 @@ describe('deriveInsights', () => {
 
   it('should calculate category totals correctly', () => {
     const expenses: Expense[] = [
-      { id: 1, amount: 10, category: 'Groceries', date: '2023-05-01', description: '' },
-      { id: 2, amount: 20, category: 'Transport', date: '2023-05-02', description: '' },
-      { id: 3, amount: 15, category: 'Groceries', date: '2023-05-03', description: '' },
+      { id: 1, amount: 10, category: 'Groceries', date: '2023-05-01', description: '', updated_at: '2023-05-01T00:00:00Z' },
+      { id: 2, amount: 20, category: 'Transport', date: '2023-05-02', description: '', updated_at: '2023-05-02T00:00:00Z' },
+      { id: 3, amount: 15, category: 'Groceries', date: '2023-05-03', description: '', updated_at: '2023-05-03T00:00:00Z' },
     ];
     const now = new Date('2023-05-15T12:00:00Z');
     
@@ -39,9 +39,9 @@ describe('deriveInsights', () => {
 describe('expensesForCategory', () => {
   it('should filter expenses by category and month', () => {
     const expenses: Expense[] = [
-      { id: 1, amount: 10, category: 'Groceries', date: '2023-05-01', description: '' },
-      { id: 2, amount: 20, category: 'Transport', date: '2023-05-02', description: '' },
-      { id: 3, amount: 15, category: 'Groceries', date: '2023-06-03', description: '' }, // wrong month
+      { id: 1, amount: 10, category: 'Groceries', date: '2023-05-01', description: '', updated_at: '2023-05-01T00:00:00Z' },
+      { id: 2, amount: 20, category: 'Transport', date: '2023-05-02', description: '', updated_at: '2023-05-02T00:00:00Z' },
+      { id: 3, amount: 15, category: 'Groceries', date: '2023-06-03', description: '', updated_at: '2023-06-03T00:00:00Z' }, // wrong month
     ];
 
     const filtered = expensesForCategory(expenses, 2023, 5, 'Groceries');

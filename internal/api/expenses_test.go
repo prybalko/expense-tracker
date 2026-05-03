@@ -401,6 +401,205 @@ func TestHandleDeleteExpense(t *testing.T) {
 
 func itoa(i int64) string { return fmt.Sprintf("%d", i) }
 
+// TestListExpensesIncludesServerTime pins the contract every client
+// relies on: the full-list response carries a serverTime the client pins
+// as its initial lastSyncAt. Without this field the Feed would have no
+// baseline to hand to /api/expenses/changes?since=... and the delta-sync
+// flow would degrade to a full refetch on every navigation.
+func TestListExpensesIncludesServerTime(t *testing.T) {
+	env := newTestEnv(t)
+	_, err := env.db.InsertExpense(5, "x", "Other", time.Now(), env.user.ID)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses", nil))
+	rec := httptest.NewRecorder()
+	env.server.handleListExpenses(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200", rec.Code)
+	}
+	var resp listExpensesResponse
+	decodeBody(t, rec, &resp)
+	if resp.ServerTime == "" {
+		t.Fatalf("serverTime should be non-empty, got %q", resp.ServerTime)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, resp.ServerTime); err != nil {
+		t.Fatalf("serverTime must parse as RFC3339Nano, got %q (%v)", resp.ServerTime, err)
+	}
+	if got := rec.Header().Get(serverTimeHeader); got == "" {
+		t.Fatalf("expected X-Server-Time header")
+	}
+}
+
+// TestHandleListChanges exercises the delta endpoint's full contract.
+func TestHandleListChanges(t *testing.T) {
+	env := newTestEnv(t)
+
+	// Seed a row that will be present BEFORE the cutoff; it should never
+	// appear in the diff so long as nothing touches it.
+	old, err := env.db.InsertExpense(10, "Old", "Other", time.Now(), env.user.ID)
+	if err != nil {
+		t.Fatalf("seed old: %v", err)
+	}
+
+	cutoff := time.Now().UTC()
+	time.Sleep(2 * time.Millisecond)
+
+	// Insert a new row and edit the old one — both must come back in
+	// `updated`.
+	fresh, err := env.db.InsertExpense(20, "Fresh", "Other", time.Now(), env.user.ID)
+	if err != nil {
+		t.Fatalf("seed fresh: %v", err)
+	}
+	old.Description = "Old edited"
+	if err := env.db.UpdateExpense(env.user.ID, old); err != nil {
+		t.Fatalf("update old: %v", err)
+	}
+
+	// Seed a row and soft-delete it — its id must come back in
+	// `deletedIds`, not `updated`.
+	doomed, err := env.db.InsertExpense(30, "Doomed", "Other", time.Now(), env.user.ID)
+	if err != nil {
+		t.Fatalf("seed doomed: %v", err)
+	}
+	if err := env.db.DeleteExpense(env.user.ID, doomed.ID); err != nil {
+		t.Fatalf("delete doomed: %v", err)
+	}
+
+	t.Run("happy path", func(t *testing.T) {
+		target := "/api/expenses/changes?since=" + cutoff.Format(time.RFC3339Nano)
+		req := env.withUser(buildRequest(t, http.MethodGet, target, nil))
+		rec := httptest.NewRecorder()
+		env.server.handleListChanges(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status: got %d want 200 (body=%q)", rec.Code, rec.Body.String())
+		}
+		var resp changesResponse
+		decodeBody(t, rec, &resp)
+		if resp.ServerTime == "" {
+			t.Fatalf("serverTime missing")
+		}
+
+		updatedIDs := map[int64]string{}
+		for _, e := range resp.Updated {
+			updatedIDs[e.ID] = e.Description
+		}
+		if updatedIDs[fresh.ID] != "Fresh" {
+			t.Fatalf("expected fresh row in updated, got %+v", resp.Updated)
+		}
+		if updatedIDs[old.ID] != "Old edited" {
+			t.Fatalf("expected edited old row in updated with new description, got %+v", resp.Updated)
+		}
+		if _, seen := updatedIDs[doomed.ID]; seen {
+			t.Fatalf("deleted row must not appear in the updated bucket, got %+v", resp.Updated)
+		}
+		if len(resp.DeletedIDs) != 1 || resp.DeletedIDs[0] != doomed.ID {
+			t.Fatalf("expected [%d] in deletedIds, got %+v", doomed.ID, resp.DeletedIDs)
+		}
+	})
+
+	t.Run("missing since is 400", func(t *testing.T) {
+		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses/changes", nil))
+		rec := httptest.NewRecorder()
+		env.server.handleListChanges(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status: got %d want 400", rec.Code)
+		}
+	})
+
+	t.Run("malformed since is 400", func(t *testing.T) {
+		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses/changes?since=yesterday", nil))
+		rec := httptest.NewRecorder()
+		env.server.handleListChanges(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status: got %d want 400", rec.Code)
+		}
+	})
+
+	t.Run("empty diff returns empty arrays", func(t *testing.T) {
+		future := time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano)
+		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses/changes?since="+future, nil))
+		rec := httptest.NewRecorder()
+		env.server.handleListChanges(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status: got %d want 200", rec.Code)
+		}
+		var resp changesResponse
+		decodeBody(t, rec, &resp)
+		if resp.Updated == nil || resp.DeletedIDs == nil {
+			t.Fatalf("empty arrays should be [] not null: %+v", resp)
+		}
+	})
+
+	t.Run("returns 401 without user", func(t *testing.T) {
+		req := buildRequest(t, http.MethodGet, "/api/expenses/changes?since=2000-01-01T00:00:00Z", nil)
+		rec := httptest.NewRecorder()
+		env.server.handleListChanges(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status: got %d want 401", rec.Code)
+		}
+	})
+}
+
+// TestWriteHandlersSetServerTime pins the X-Server-Time header on every
+// mutation. The client's lastSyncAt depends on this header for POST (body
+// is the row, no serverTime field) and DELETE (body is empty). Without it,
+// two back-to-back writes + a Feed sync would re-emit the second write as
+// a "change" and briefly show a duplicate row until React's reconciler
+// caught up.
+func TestWriteHandlersSetServerTime(t *testing.T) {
+	env := newTestEnv(t)
+	seeded, err := env.db.InsertExpense(10, "Seed", "Other", time.Now(), env.user.ID)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	assertHeader := func(t *testing.T, rec *httptest.ResponseRecorder) {
+		t.Helper()
+		got := rec.Header().Get(serverTimeHeader)
+		if got == "" {
+			t.Fatalf("missing %s header", serverTimeHeader)
+		}
+		if _, err := time.Parse(time.RFC3339Nano, got); err != nil {
+			t.Fatalf("%s must be RFC3339Nano, got %q (%v)", serverTimeHeader, got, err)
+		}
+	}
+
+	t.Run("POST", func(t *testing.T) {
+		req := env.withUser(buildRequest(t, http.MethodPost, "/api/expenses",
+			map[string]any{"amount": 5, "description": "New", "category": "Other"}))
+		rec := httptest.NewRecorder()
+		env.server.handleCreateExpense(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("status: got %d want 201 (body=%q)", rec.Code, rec.Body.String())
+		}
+		assertHeader(t, rec)
+	})
+
+	t.Run("PATCH", func(t *testing.T) {
+		req := env.withUser(buildRequest(t, http.MethodPatch, "/api/expenses/"+itoa(seeded.ID),
+			map[string]any{"description": "Edited"}))
+		req.SetPathValue("id", itoa(seeded.ID))
+		rec := httptest.NewRecorder()
+		env.server.handleUpdateExpense(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status: got %d want 200 (body=%q)", rec.Code, rec.Body.String())
+		}
+		assertHeader(t, rec)
+	})
+
+	t.Run("DELETE", func(t *testing.T) {
+		req := env.withUser(buildRequest(t, http.MethodDelete, "/api/expenses/"+itoa(seeded.ID), nil))
+		req.SetPathValue("id", itoa(seeded.ID))
+		rec := httptest.NewRecorder()
+		env.server.handleDeleteExpense(rec, req)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status: got %d want 204", rec.Code)
+		}
+		assertHeader(t, rec)
+	})
+}
+
 // TestExpenseEndpointsScopedToUser verifies the redesigned read paths return
 // 404 / empty results when one authenticated user tries to access another
 // user's data. The pre-redesign global queries plus a global

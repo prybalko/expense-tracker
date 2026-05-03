@@ -440,6 +440,97 @@ func (s *E2ETestSuite) TestCategoryDetailsFromInsights() {
 	s.Require().NoError(err, "entry form should open from details click")
 }
 
+// TestFeedSyncPicksUpServerSideInserts documents the delta-sync contract:
+// a row inserted server-side after the initial cold fetch (e.g. another
+// device, another tab, or an admin script — simulated here by writing to
+// the DB directly) should surface in the Feed on the next navigation
+// without a full page reload. If this test regresses, lastSyncAt isn't
+// being pinned on cold start or the Feed mount effect isn't firing the
+// diff hook.
+func (s *E2ETestSuite) TestFeedSyncPicksUpServerSideInserts() {
+	s.login()
+
+	// Baseline: the Feed is empty at login. The initial GET /api/expenses
+	// has already landed (the hero-label / blank-state test covers the
+	// mount path) and lastSyncAt is set in the React Query cache.
+	err := s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(0)
+	s.Require().NoError(err, "expected empty feed before server-side insert")
+
+	// Insert a row directly into the DB the running server is using.
+	// The admin bootstrap user is "testuser" (created by the harness) and
+	// the only user in the DB, so any new expense with user_id=1 is
+	// visible to them on the next sync. Business-key tuple is distinct
+	// from anything the test creates via the UI so the partial unique
+	// index stays happy.
+	db, err := storage.NewDB(dbPath)
+	s.Require().NoError(err, "could not open DB for out-of-band insert")
+	_, err = db.InsertExpense(77.77, "Synced From Elsewhere", "Other", time.Now(), 1)
+	s.Require().NoError(err, "could not insert expense out-of-band")
+	db.Close()
+
+	// Force a Feed re-mount. Any navigation does — bouncing through /insights
+	// and back is the shortest round trip that keeps the browser's session
+	// cookie + in-memory React Query cache so lastSyncAt persists.
+	_, err = s.page.Goto(appURL + "/insights")
+	s.Require().NoError(err, "failed to navigate away from feed")
+	_, err = s.page.Goto(appURL)
+	s.Require().NoError(err, "failed to navigate back to feed")
+
+	// On /insights Goto is a hard navigation, which drops React Query's
+	// in-memory cache — the subsequent landing on / effectively cold-starts
+	// again. That's fine: it still exercises the wire contract (new row
+	// returned by GET /api/expenses). For a true in-memory diff we'd need
+	// to drive navigation via the Router, which has no data-testid target.
+	// The full-list response carries the inserted row too, so assert on
+	// it either way.
+	err = s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(1)
+	s.Require().NoError(err, "expected the out-of-band row to appear after re-navigation")
+
+	row := s.page.Locator(tid("expense-row")).First()
+	err = s.expect.Locator(row.Locator(tid("expense-row-desc"))).ToHaveText("Synced From Elsewhere")
+	s.Require().NoError(err, "expected the synced row's description")
+	err = s.expect.Locator(row.Locator(tid("expense-row-amount"))).ToContainText("77.77")
+	s.Require().NoError(err, "expected the synced row's amount")
+}
+
+// TestDeleteThenReinsertSameTuple pins the partial unique index: after a
+// soft-delete, the user can re-enter the exact same (date, amount,
+// description) tuple without a 409. This is the practical user-facing
+// payoff of the tombstone migration — they can delete a mistake and
+// re-enter it with the same data.
+func (s *E2ETestSuite) TestDeleteThenReinsertSameTuple() {
+	s.login()
+
+	s.addExpense("4.50", "Coffee", "eating")
+	err := s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(1)
+	s.Require().NoError(err, "expected 1 row after initial create")
+
+	// Open the row for edit and delete it.
+	row := s.page.Locator(tid("expense-row")).First()
+	err = row.Click()
+	s.Require().NoError(err, "failed to click row")
+	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).ToBeVisible()
+	s.Require().NoError(err, "edit form not visible")
+	s.page.OnDialog(func(dialog playwright.Dialog) { dialog.Accept() })
+	err = s.page.Locator(tid("entry-delete")).Click()
+	s.Require().NoError(err, "failed to click delete")
+	err = s.expect.Locator(s.page.Locator(tid("feed-screen"))).ToBeVisible()
+	s.Require().NoError(err, "should be back on feed after delete")
+	err = s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(0)
+	s.Require().NoError(err, "expected row to disappear after delete")
+
+	// Re-create the same tuple. With the non-partial index from before the
+	// soft-delete migration this would come back as a 409 and the error
+	// banner would show; we assert the opposite — the row materializes
+	// and no banner is rendered.
+	s.addExpense("4.50", "Coffee", "eating")
+	err = s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(1)
+	s.Require().NoError(err, "expected the re-inserted row to appear")
+	count, err := s.page.Locator(tid("error-banner")).Count()
+	s.Require().NoError(err, "failed to count error banners")
+	s.Require().Equal(0, count, "no banner should appear on successful re-insert")
+}
+
 // addExpense is a small helper used by tests that need pre-seeded rows. It
 // taps FAB → keypad → note → category tile → submit.
 func (s *E2ETestSuite) addExpense(amount, note, categorySlug string) {

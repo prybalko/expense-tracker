@@ -3,14 +3,17 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  type QueryClient,
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
 import {
   createExpense,
   deleteExpense,
+  listChanges,
   listExpenses,
   updateExpense,
+  type ExpenseWriteResult,
 } from "../api/expenses";
 import type {
   CreateExpenseInput,
@@ -27,19 +30,120 @@ import { deriveInsights, expensesForCategory } from "../insights/derive";
 // resolve at different times (the source of the old "number jumps" UX).
 export const expensesQueryKey = ["expenses"] as const;
 
+// lastSyncKey holds the server's wall-clock at the moment the client last
+// successfully synced. The full-list query populates it on cold start; the
+// diff hook advances it on every successful /changes call; every mutation
+// advances it off X-Server-Time. The value is whatever string the server
+// handed back (RFC3339Nano) — the client never derives or compares it to
+// its own clock. Stays in the query cache rather than a module variable so
+// React Query devtools + multi-tab cache inspection surface it the same
+// way as the rest of the sync state.
+export const lastSyncKey = ["expenses", "lastSyncAt"] as const;
+
+// sortExpenses mirrors the server's (date DESC, id DESC) ordering so that
+// upserts from mutations / diffs don't visually reshuffle the Feed in ways
+// the server wouldn't. Keeping the comparator lexical on `date` relies on
+// the RFC3339Nano wire format being sortable as a plain string.
+function sortExpenses(arr: Expense[]): Expense[] {
+  const out = [...arr];
+  out.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return b.id - a.id;
+  });
+  return out;
+}
+
+// upsertExpense replaces a row with the same id if present, otherwise
+// inserts. Used for the happy path of create / update mutations where the
+// server hands back exactly one row. Re-sorts so the Feed doesn't briefly
+// render the new row in insertion order before the next render.
+function upsertExpense(prev: Expense[] | undefined, next: Expense): Expense[] {
+  const base = prev ?? [];
+  const without = base.filter((e) => e.id !== next.id);
+  return sortExpenses([...without, next]);
+}
+
+// mergeChanges applies a delta-sync payload to the cache in one pass:
+// deletions pruned, updates upserted (covers both "new since lastSyncAt"
+// and "edited since lastSyncAt"), everything else preserved. One re-sort
+// at the end keeps the rendered order canonical.
+export function mergeChanges(
+  prev: Expense[] | undefined,
+  updated: Expense[],
+  deletedIds: number[],
+): Expense[] {
+  const base = prev ?? [];
+  const deletedSet = new Set(deletedIds);
+  const updatedById = new Map(updated.map((e) => [e.id, e]));
+  const out: Expense[] = [];
+  for (const e of base) {
+    if (deletedSet.has(e.id)) continue;
+    const replacement = updatedById.get(e.id);
+    if (replacement) {
+      out.push(replacement);
+      updatedById.delete(e.id);
+    } else {
+      out.push(e);
+    }
+  }
+  for (const fresh of updatedById.values()) {
+    out.push(fresh);
+  }
+  return sortExpenses(out);
+}
+
+function advanceLastSync(qc: QueryClient, serverTime: string | null): void {
+  if (!serverTime) return;
+  const current = qc.getQueryData<string>(lastSyncKey);
+  // Only move the marker forward. A stale mutation response (slow network
+  // overtaken by a later diff) could otherwise rewind lastSyncAt and cause
+  // the next diff to re-emit rows we already have. String compare is safe
+  // because both values are RFC3339Nano UTC.
+  if (!current || serverTime > current) {
+    qc.setQueryData<string>(lastSyncKey, serverTime);
+  }
+}
+
+// useAllExpenses owns the first fetch. staleTime + gcTime: Infinity pin
+// the cache for the lifetime of the session so React Query never refetches
+// the full list behind our back; every post-initial refresh lives in
+// useSyncExpenses, which calls the diff endpoint and merges. That way a
+// five-minute-long navigation session never repays the full-list cost,
+// and newly-edited rows still show up on Feed entry.
 export function useAllExpenses(): UseQueryResult<Expense[], Error> {
+  const qc = useQueryClient();
   return useQuery<Expense[], Error>({
     queryKey: expensesQueryKey,
     queryFn: async () => {
       const page = await listExpenses();
-      return page.items;
+      advanceLastSync(qc, page.serverTime);
+      return sortExpenses(page.items);
     },
-    // Mutations explicitly invalidate this key after a successful write, so
-    // we can treat the cached array as fresh between writes. Without this,
-    // every screen mount on the Feed → Insights → CategoryDetails path would
-    // refetch the full list and bring back the "loading flash" we just
-    // removed.
-    staleTime: 5 * 60 * 1000,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+}
+
+// useSyncExpenses exposes a manually-triggered delta fetch. The Feed
+// screen calls this from its mount effect; on success the cache is
+// merged in place and lastSyncAt advances. The hook short-circuits
+// gracefully when lastSyncAt isn't set yet (the cold-start fetch is
+// still in flight) so navigating to Feed mid-load doesn't double-request.
+export type SyncExpensesMutation = UseMutationResult<void, Error, void, unknown>;
+
+export function useSyncExpenses(): SyncExpensesMutation {
+  const qc = useQueryClient();
+  return useMutation<void, Error, void>({
+    mutationKey: ["expenses", "sync"],
+    mutationFn: async () => {
+      const since = qc.getQueryData<string>(lastSyncKey);
+      if (!since) return;
+      const changes = await listChanges(since);
+      qc.setQueryData<Expense[]>(expensesQueryKey, (prev) =>
+        mergeChanges(prev, changes.updated, changes.deletedIds),
+      );
+      advanceLastSync(qc, changes.serverTime);
+    },
   });
 }
 
@@ -100,90 +204,43 @@ export function useCategoryView(
   return { ...view, isLoading: query.isLoading };
 }
 
-let _tempIdCounter = -1;
-function nextTempId(): number {
-  return _tempIdCounter--;
-}
-
-function todayIso(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-type CreateContext = {
-  tempId: number;
-  previous: Expense[] | undefined;
-};
-
-type RollbackContext = {
-  previous: Expense[] | undefined;
-};
-
 export type CreateExpenseMutation = UseMutationResult<
-  Expense,
+  ExpenseWriteResult<Expense>,
   Error,
   CreateExpenseInput,
-  CreateContext
+  unknown
 >;
 
 export type UpdateExpenseMutation = UseMutationResult<
-  Expense,
+  ExpenseWriteResult<Expense>,
   Error,
   { id: number; patch: UpdateExpenseInput },
-  RollbackContext
+  unknown
 >;
 
 export type DeleteExpenseMutation = UseMutationResult<
-  void,
+  ExpenseWriteResult<void>,
   Error,
   number,
-  RollbackContext
+  unknown
 >;
 
+// useCreateExpense POSTs to the server and only touches the cache on
+// success. Optimistic updates were removed when the app moved to
+// wait-for-server writes: the user sees "Adding..." → banner-or-row, with
+// no phantom temp-id row in between. Insert copy has to absorb the full
+// round-trip latency now, but the cache never shows a row the server
+// hasn't confirmed — which is the behaviour the error banner assumes.
 export function useCreateExpense(): CreateExpenseMutation {
   const qc = useQueryClient();
-  return useMutation<Expense, Error, CreateExpenseInput, CreateContext>({
+  return useMutation<ExpenseWriteResult<Expense>, Error, CreateExpenseInput>({
     mutationKey: ["expenses", "create"],
-    onMutate: async (input) => {
-      await qc.cancelQueries({ queryKey: expensesQueryKey });
-      const previous = qc.getQueryData<Expense[]>(expensesQueryKey);
-      const tempId = nextTempId();
-      const optimistic: Expense = {
-        id: tempId,
-        amount: input.amount,
-        description: input.description,
-        category: input.category,
-        date: input.date ?? todayIso(),
-      };
-      qc.setQueryData<Expense[]>(expensesQueryKey, (old) =>
-        old ? [optimistic, ...old] : [optimistic],
-      );
-      return { tempId, previous };
-    },
     mutationFn: (input) => createExpense(input),
-    onSuccess: async (result, _vars, ctx) => {
-      // Swap the optimistic temp-id row for the canonical server row up
-      // front. The invalidate below also triggers a background refetch,
-      // but doing this synchronously means the new row is in the cache
-      // immediately — the user can't end up looking at a Feed that's
-      // briefly missing the row they just created.
-      qc.setQueryData<Expense[]>(expensesQueryKey, (old) => {
-        if (!old) return [result];
-        const replaced = old.map((e) => (e.id === ctx.tempId ? result : e));
-        // If the optimistic row wasn't in the cache for some reason
-        // (cleared/evicted between onMutate and onSuccess), prepend it.
-        return replaced.some((e) => e.id === result.id)
-          ? replaced
-          : [result, ...replaced];
-      });
-      await qc.invalidateQueries({ queryKey: expensesQueryKey });
-    },
-    onError: (_err, _vars, ctx) => {
-      if (!ctx) return;
-      qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
+    onSuccess: ({ data, serverTime }) => {
+      qc.setQueryData<Expense[]>(expensesQueryKey, (prev) =>
+        upsertExpense(prev, data),
+      );
+      advanceLastSync(qc, serverTime);
     },
   });
 }
@@ -191,60 +248,31 @@ export function useCreateExpense(): CreateExpenseMutation {
 export function useUpdateExpense(): UpdateExpenseMutation {
   const qc = useQueryClient();
   return useMutation<
-    Expense,
+    ExpenseWriteResult<Expense>,
     Error,
-    { id: number; patch: UpdateExpenseInput },
-    RollbackContext
+    { id: number; patch: UpdateExpenseInput }
   >({
     mutationKey: ["expenses", "update"],
-    onMutate: async ({ id, patch }) => {
-      await qc.cancelQueries({ queryKey: expensesQueryKey });
-      const previous = qc.getQueryData<Expense[]>(expensesQueryKey);
-      qc.setQueryData<Expense[]>(expensesQueryKey, (old) =>
-        old?.map((e) =>
-          e.id === id
-            ? {
-                ...e,
-                amount: patch.amount ?? e.amount,
-                description: patch.description ?? e.description,
-                category: patch.category ?? e.category,
-                date: patch.date ?? e.date,
-              }
-            : e,
-        ),
-      );
-      return { previous };
-    },
     mutationFn: ({ id, patch }) => updateExpense(id, patch),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: expensesQueryKey });
-    },
-    onError: (_err, _vars, ctx) => {
-      if (!ctx) return;
-      qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
+    onSuccess: ({ data, serverTime }) => {
+      qc.setQueryData<Expense[]>(expensesQueryKey, (prev) =>
+        upsertExpense(prev, data),
+      );
+      advanceLastSync(qc, serverTime);
     },
   });
 }
 
 export function useDeleteExpense(): DeleteExpenseMutation {
   const qc = useQueryClient();
-  return useMutation<void, Error, number, RollbackContext>({
+  return useMutation<ExpenseWriteResult<void>, Error, number>({
     mutationKey: ["expenses", "delete"],
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: expensesQueryKey });
-      const previous = qc.getQueryData<Expense[]>(expensesQueryKey);
-      qc.setQueryData<Expense[]>(expensesQueryKey, (old) =>
-        old?.filter((e) => e.id !== id),
-      );
-      return { previous };
-    },
     mutationFn: (id) => deleteExpense(id),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: expensesQueryKey });
-    },
-    onError: (_err, _vars, ctx) => {
-      if (!ctx) return;
-      qc.setQueryData<Expense[]>(expensesQueryKey, ctx.previous);
+    onSuccess: ({ serverTime }, id) => {
+      qc.setQueryData<Expense[]>(expensesQueryKey, (prev) =>
+        (prev ?? []).filter((e) => e.id !== id),
+      );
+      advanceLastSync(qc, serverTime);
     },
   });
 }

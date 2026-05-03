@@ -4,8 +4,14 @@ import { theme, FONT } from "../theme";
 import { Hero } from "../components/Hero";
 import { DayGroup } from "../components/DayGroup";
 import { TabBar } from "../components/TabBar";
-import { useAllExpenses, useInsightsFor } from "../hooks/useExpenses";
+import {
+  useAllExpenses,
+  useInsightsFor,
+  useSyncExpenses,
+} from "../hooks/useExpenses";
 import { useCategoryLookup } from "../hooks/useCategoryLookup";
+import { useErrorBanner } from "../hooks/useErrorBanner";
+import { messageForReadError } from "../api/errors";
 import { dayLabel, groupByDay } from "../groupByDay";
 import type { Expense } from "../types";
 
@@ -32,8 +38,31 @@ export function Feed() {
   const today = useMemo(() => new Date(), []);
   const insights = useInsightsFor(today.getFullYear(), today.getMonth() + 1);
   const expenses = useAllExpenses();
+  const sync = useSyncExpenses();
+  const { showError } = useErrorBanner();
   const lookup = useCategoryLookup();
   const slugFor = lookup.slugByLabel;
+
+  // Fire a delta sync every time the Feed mounts. useSyncExpenses reads
+  // lastSyncAt from the cache; if the cold-start fetch hasn't landed it
+  // no-ops and this effect becomes a cheap cache-hit. Using sync.mutate
+  // (stable across renders in React Query v5) lets us keep the empty deps
+  // array honest — one sync per navigation to /, not per render.
+  const syncMutate = sync.mutate;
+  useEffect(() => {
+    syncMutate(undefined, {
+      onError: (err) => showError(messageForReadError(err)),
+    });
+  }, [syncMutate, showError]);
+
+  // Surface cold-start fetch failures the same way. Without this the Feed
+  // would quietly sit on an empty state and the user would have no signal
+  // that the app couldn't load their data.
+  useEffect(() => {
+    if (expenses.isError && expenses.error) {
+      showError(messageForReadError(expenses.error));
+    }
+  }, [expenses.isError, expenses.error, showError]);
 
   // Windowed render: bump `visible` as the sentinel scrolls into view.
   // Replaces the old useInfiniteQuery + cursor pagination — the data is
