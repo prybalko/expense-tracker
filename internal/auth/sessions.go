@@ -28,6 +28,7 @@ func UserFromContext(ctx context.Context) (*models.User, bool) {
 
 // SetSessionCookie writes the session cookie with standard attributes.
 func SetSessionCookie(w http.ResponseWriter, token string, secure bool) {
+	//nolint:gosec // Secure flag is configurable via secure param
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    token,
@@ -41,6 +42,7 @@ func SetSessionCookie(w http.ResponseWriter, token string, secure bool) {
 
 // ClearSessionCookie expires the session cookie on the client.
 func ClearSessionCookie(w http.ResponseWriter, secure bool) {
+	//nolint:gosec // Secure flag is configurable via secure param
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    "",

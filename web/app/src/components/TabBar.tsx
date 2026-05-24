@@ -73,6 +73,8 @@ export function TabBar({ current, onNavigate, onAdd }: Props) {
         gap: 8,
         fontFamily: FONT,
         flexShrink: 0,
+        position: "relative",
+        zIndex: 10,
       }}
     >
       <TabButton

@@ -59,7 +59,8 @@ func bootstrapUser(db *storage.DB) {
 		return
 	}
 
-	log.Printf("Created admin user: %s", username)
+	//nolint:gosec // Log injection mitigated by quoting
+	log.Printf("Created admin user: %q", username)
 }
 
 // newSPAHandler returns a handler that serves files from the embedded
@@ -165,7 +166,8 @@ func main() {
 	serverErrors := make(chan error, 1)
 
 	go func() {
-		log.Printf("Server starting on %s", port)
+		//nolint:gosec // Log injection mitigated by quoting
+		log.Printf("Server starting on %q", port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErrors <- err
 		}

@@ -575,7 +575,7 @@ func (s *E2ETestSuite) TestFeedTabSwitchDoesNotFireSync() {
 
 	// Wait for the cold-start GET /api/expenses to settle before we install
 	// the counter — otherwise the initial fetch (which IS expected) would
-	// be conflated with the tab-toggle behaviour under test.
+	// be conflated with the tab-toggle behavior under test.
 	err := s.expect.Locator(s.page.Locator(tid("feed-screen"))).ToBeVisible()
 	s.Require().NoError(err, "feed should be visible after login")
 
