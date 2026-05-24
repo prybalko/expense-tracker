@@ -15,11 +15,13 @@ import {
   updateExpense,
   type ExpenseWriteResult,
 } from "../api/expenses";
+import { getMe } from "../api/auth";
 import type {
   CreateExpenseInput,
   Expense,
   Insights,
   UpdateExpenseInput,
+  User,
 } from "../types";
 import { deriveInsights, expensesForCategory } from "../insights/derive";
 
@@ -29,6 +31,26 @@ import { deriveInsights, expensesForCategory } from "../insights/derive";
 // touch this one key — and screens never coordinate two queries that
 // resolve at different times (the source of the old "number jumps" UX).
 export const expensesQueryKey = ["expenses"] as const;
+
+// currentUserQueryKey holds the signed-in user fetched via /api/auth/me.
+// ExpenseRow reads this to decide whether each row was authored by someone
+// else (and should be tinted). It stays in cache for the lifetime of the
+// session and is wiped by Login.tsx's queryClient.clear() on a fresh login.
+export const currentUserQueryKey = ["auth", "me"] as const;
+
+// useCurrentUser returns the signed-in user. ExpenseRow calls it once per
+// row, but React Query dedupes by key — there's only ever one in-flight
+// /api/auth/me request and the result is reused. staleTime/gcTime are
+// Infinity because the identity doesn't change without re-login (which
+// clears the whole cache via Login.tsx).
+export function useCurrentUser(): UseQueryResult<User, Error> {
+  return useQuery<User, Error>({
+    queryKey: currentUserQueryKey,
+    queryFn: () => getMe(),
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+}
 
 // lastSyncKey holds the server's wall-clock at the moment the client last
 // successfully synced. The full-list query populates it on cold start; the

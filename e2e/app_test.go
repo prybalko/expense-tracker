@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"expense-tracker/internal/auth"
 	"expense-tracker/internal/storage"
 	"fmt"
 	"testing"
@@ -528,7 +529,7 @@ func (s *E2ETestSuite) TestFeedSyncPicksUpServerSideDeletes() {
 	//    the only owner, so list-and-match by description is unambiguous.
 	db, err := storage.NewDB(dbPath)
 	s.Require().NoError(err, "could not open DB for out-of-band delete")
-	all, err := db.ListExpensesAll(1)
+	all, err := db.ListExpensesAll()
 	s.Require().NoError(err, "could not list expenses to find target id")
 	var targetID int64
 	for _, e := range all {
@@ -538,7 +539,7 @@ func (s *E2ETestSuite) TestFeedSyncPicksUpServerSideDeletes() {
 		}
 	}
 	s.Require().NotZero(targetID, "could not find seeded row in DB")
-	s.Require().NoError(db.DeleteExpense(1, targetID), "soft-delete the target row")
+	s.Require().NoError(db.DeleteExpense(targetID), "soft-delete the target row")
 	db.Close()
 
 	// 3. Simulate the PWA returning to the foreground. The useSyncOnVisible
@@ -645,6 +646,62 @@ func (s *E2ETestSuite) TestDeleteThenReinsertSameTuple() {
 	count, err := s.page.Locator(tid("error-banner")).Count()
 	s.Require().NoError(err, "failed to count error banners")
 	s.Require().Equal(0, count, "no banner should appear on successful re-insert")
+}
+
+// TestFeedShowsOtherUsersRowTinted pins the shared-household UX contract:
+// every authenticated user sees every expense, and rows authored by a
+// different known user (user_id != null && user_id != me.id) are marked
+// with data-not-mine="true" so the row can be visually tinted. A row the
+// signed-in user creates themselves through the UI must NOT carry that
+// attribute. Together these assertions guard against two regressions:
+//  1. ListExpensesAll re-acquiring a per-user filter (Bob's row would
+//     disappear from Alice's feed).
+//  2. The "not mine" condition slipping back to include the self case.
+func (s *E2ETestSuite) TestFeedShowsOtherUsersRowTinted() {
+	// Mint a second household member directly against the DB. The harness
+	// only knows the bootstrap admin (testuser, id=1); we add "partner"
+	// out-of-band so we can stamp an expense with their user_id without
+	// having to log in twice.
+	db, err := storage.NewDB(dbPath)
+	s.Require().NoError(err, "could not open DB to seed second user")
+	hash, err := auth.HashPassword("partnerpw")
+	s.Require().NoError(err, "could not hash partner password")
+	partner, err := db.CreateUser("partner", hash)
+	s.Require().NoError(err, "could not create partner user")
+
+	// Drop a row owned by the partner before login, so the Feed renders
+	// it on its cold-start fetch instead of needing a diff round trip.
+	_, err = db.InsertExpense(11.11, "Roommate Beer", "Other", time.Now(), partner.ID)
+	s.Require().NoError(err, "could not insert partner-owned expense")
+	db.Close()
+
+	s.login()
+
+	// The partner's row must be visible to testuser AND tagged as "not
+	// mine". Other tests would also flag a per-user filter regression by
+	// failing to find the row at all; we assert both halves here for
+	// clarity.
+	partnerRow := s.page.Locator(tid("expense-row")).Filter(playwright.LocatorFilterOptions{
+		HasText: "Roommate Beer",
+	})
+	err = s.expect.Locator(partnerRow).ToHaveCount(1)
+	s.Require().NoError(err, "partner-owned row should be visible to testuser")
+	err = s.expect.Locator(partnerRow).ToHaveAttribute("data-not-mine", "true")
+	s.Require().NoError(err, "partner-owned row should be tagged data-not-mine=true")
+
+	// Negative control: a row testuser creates themselves through the UI
+	// must NOT carry the data-not-mine flag. ExpenseRow renders the
+	// attribute as `undefined` for self-authored rows so React omits it
+	// from the DOM entirely; Not().ToHaveAttribute(_, "true") covers both
+	// "attribute absent" and "attribute set to something other than true".
+	s.addExpense("4.50", "My Own Coffee", "eating")
+	mineRow := s.page.Locator(tid("expense-row")).Filter(playwright.LocatorFilterOptions{
+		HasText: "My Own Coffee",
+	})
+	err = s.expect.Locator(mineRow).ToHaveCount(1)
+	s.Require().NoError(err, "self-authored row should appear on the feed")
+	err = s.expect.Locator(mineRow).Not().ToHaveAttribute("data-not-mine", "true")
+	s.Require().NoError(err, "self-authored row must not be marked data-not-mine")
 }
 
 // addExpense is a small helper used by tests that need pre-seeded rows. It

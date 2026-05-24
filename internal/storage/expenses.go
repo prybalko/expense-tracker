@@ -86,17 +86,16 @@ func (db *DB) InsertExpense(amount float64, description, category string, date t
 	}, nil
 }
 
-// GetExpense retrieves a single live (non-tombstoned) expense visible to
-// userID. A row is visible when its user_id matches OR when it has no owner
-// (user_id IS NULL) — the latter covers pre-multi-user historical data that
-// predates user scoping. Soft-deleted rows (deleted_at IS NOT NULL) are
-// invisible to every code path above storage; callers see them as "not
+// GetExpense retrieves a single live (non-tombstoned) expense. The app is a
+// shared-household ledger: every authenticated user can read every row
+// regardless of who created it. Soft-deleted rows (deleted_at IS NOT NULL)
+// are invisible to every code path above storage; callers see them as "not
 // found" so the edit flow doesn't accidentally resurrect a tombstone.
-func (db *DB) GetExpense(userID, id int64) (*models.Expense, error) {
+func (db *DB) GetExpense(id int64) (*models.Expense, error) {
 	row := db.conn.QueryRow(
 		`SELECT `+expenseColumns+` FROM expenses
-		 WHERE id = ? AND (user_id = ? OR user_id IS NULL) AND deleted_at IS NULL`,
-		id, userID,
+		 WHERE id = ? AND deleted_at IS NULL`,
+		id,
 	)
 
 	var e models.Expense
@@ -106,24 +105,24 @@ func (db *DB) GetExpense(userID, id int64) (*models.Expense, error) {
 	return &e, nil
 }
 
-// UpdateExpense updates an existing live expense visible to userID. The
-// SET clause does not touch user_id, so updating a NULL-owned row keeps it
-// NULL; we never silently "claim" a shared historical row for the editing
-// user. updated_at advances to now() so the Feed diff picks this row up on
-// the next sync.
+// UpdateExpense updates an existing live expense. The SET clause does not
+// touch user_id, so the original author survives any edit — whether it's
+// the author editing their own row, a co-user editing someone else's, or
+// an edit on a legacy NULL-owned historical row. updated_at advances to
+// now() so the Feed diff picks this row up on the next sync.
 //
 // If the new (user_id, date, amount, description) tuple collides with the
 // partial unique index, it returns ErrDuplicateExpense so handlers can map
 // it to 409 Conflict. Attempts to update a soft-deleted row are silently
 // no-ops at the SQL level; callers filter that earlier via GetExpense, which
 // already hides tombstoned rows.
-func (db *DB) UpdateExpense(userID int64, e *models.Expense) error {
+func (db *DB) UpdateExpense(e *models.Expense) error {
 	e.Date = e.Date.UTC()
 	now := time.Now().UTC()
 	_, err := db.conn.Exec(
 		`UPDATE expenses SET amount = ?, description = ?, category = ?, date = ?, updated_at = ?
-		 WHERE id = ? AND (user_id = ? OR user_id IS NULL) AND deleted_at IS NULL`,
-		e.Amount, e.Description, e.Category, e.Date, now, e.ID, userID,
+		 WHERE id = ? AND deleted_at IS NULL`,
+		e.Amount, e.Description, e.Category, e.Date, now, e.ID,
 	)
 	if err != nil {
 		if isUniqueConstraintError(err) {
@@ -135,34 +134,32 @@ func (db *DB) UpdateExpense(userID int64, e *models.Expense) error {
 	return nil
 }
 
-// DeleteExpense soft-deletes an expense visible to userID. The row stays in
-// the table with deleted_at set to now(); delta-sync uses that timestamp to
-// emit a tombstone so the client can drop the row from its cache on the next
-// Feed diff. updated_at is also bumped so any code path that only tracks
+// DeleteExpense soft-deletes an expense. The row stays in the table with
+// deleted_at set to now(); delta-sync uses that timestamp to emit a
+// tombstone so every client drops the row from its cache on the next Feed
+// diff. updated_at is also bumped so any code path that only tracks
 // updated_at (rather than deleted_at separately) still sees the change.
 //
 // Rows already tombstoned are no-ops — deleting twice doesn't refresh the
-// deleted_at cursor, which keeps tombstone ordering stable. Rows owned by a
-// different user are silently ignored, preserving cross-user isolation;
-// unowned legacy rows (user_id IS NULL) are intentionally deletable so any
-// logged-in user can prune them.
-func (db *DB) DeleteExpense(userID, id int64) error {
+// deleted_at cursor, which keeps tombstone ordering stable. Any authenticated
+// user can delete any row (shared-household model).
+func (db *DB) DeleteExpense(id int64) error {
 	now := time.Now().UTC()
 	_, err := db.conn.Exec(
 		`UPDATE expenses SET deleted_at = ?, updated_at = ?
-		 WHERE id = ? AND (user_id = ? OR user_id IS NULL) AND deleted_at IS NULL`,
-		now, now, id, userID,
+		 WHERE id = ? AND deleted_at IS NULL`,
+		now, now, id,
 	)
 	return err
 }
 
-// ListExpenses retrieves live expenses owned by userID, ordered by date
+// ListExpenses retrieves live expenses across all users, ordered by date
 // descending. Soft-deleted rows are excluded. Used by storage tests only;
 // the API uses ListExpensesAll.
-func (db *DB) ListExpenses(userID int64, limit, offset int) ([]models.Expense, error) {
+func (db *DB) ListExpenses(limit, offset int) ([]models.Expense, error) {
 	rows, err := db.conn.Query(
-		"SELECT "+expenseColumns+" FROM expenses WHERE user_id = ? AND deleted_at IS NULL ORDER BY date DESC LIMIT ? OFFSET ?",
-		userID, limit, offset,
+		"SELECT "+expenseColumns+" FROM expenses WHERE deleted_at IS NULL ORDER BY date DESC LIMIT ? OFFSET ?",
+		limit, offset,
 	)
 	if err != nil {
 		return nil, err
@@ -171,25 +168,21 @@ func (db *DB) ListExpenses(userID int64, limit, offset int) ([]models.Expense, e
 	return scanExpenses(rows)
 }
 
-// ListExpensesAll returns every live (non-tombstoned) expense visible to
-// userID, ordered by (date DESC, id DESC). A row is visible when it's
-// either owned by the user OR has no owner (user_id IS NULL). The
-// NULL-owner branch surfaces pre-multi-user historical data — it predates
-// user scoping and would otherwise be invisible to every account, hiding
-// years of legacy expenses from Insights even though the rows are still in
-// the table.
+// ListExpensesAll returns every live (non-tombstoned) expense across the
+// whole household, ordered by (date DESC, id DESC). The app intentionally
+// shares one ledger across every authenticated user — every account sees
+// every row, including legacy NULL-owner historical data.
 //
 // The API ships the entire array to the client in one response and
 // Insights / CategoryDetails derivations run off it locally — the dataset
-// is bounded by personal use, and avoiding per-screen aggregation queries
+// is bounded by household use, and avoiding per-screen aggregation queries
 // removes the visual jump that came from coordinating three queries across
 // a single page navigation.
-func (db *DB) ListExpensesAll(userID int64) ([]models.Expense, error) {
+func (db *DB) ListExpensesAll() ([]models.Expense, error) {
 	rows, err := db.conn.Query(
-		`SELECT `+expenseColumns+` FROM expenses
-		 WHERE (user_id = ? OR user_id IS NULL) AND deleted_at IS NULL
+		`SELECT ` + expenseColumns + ` FROM expenses
+		 WHERE deleted_at IS NULL
 		 ORDER BY date DESC, id DESC`,
-		userID,
 	)
 	if err != nil {
 		return nil, err
@@ -211,18 +204,15 @@ func (db *DB) ListExpensesAll(userID int64) ([]models.Expense, error) {
 // serverTime = now() when responding, and the client passes that back on the
 // next call. Using `>=` would re-emit the last row observed on every diff.
 //
-// Visibility mirrors ListExpensesAll: owned rows + unowned legacy rows.
-// Scoping soft-delete tombstones the same way means a pruned legacy row
-// disappears from every user's feed on their next sync, matching the
-// existing "any user can prune NULL-owner rows" policy.
-func (db *DB) ListExpensesChangedSince(userID int64, since time.Time) ([]models.Expense, []int64, error) {
+// Visibility mirrors ListExpensesAll: every live row across the household.
+func (db *DB) ListExpensesChangedSince(since time.Time) ([]models.Expense, []int64, error) {
 	since = since.UTC()
 
 	updRows, err := db.conn.Query(
 		`SELECT `+expenseColumns+` FROM expenses
-		 WHERE (user_id = ? OR user_id IS NULL) AND deleted_at IS NULL AND updated_at > ?
+		 WHERE deleted_at IS NULL AND updated_at > ?
 		 ORDER BY date DESC, id DESC`,
-		userID, since,
+		since,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -235,8 +225,8 @@ func (db *DB) ListExpensesChangedSince(userID int64, since time.Time) ([]models.
 
 	delRows, err := db.conn.Query(
 		`SELECT id FROM expenses
-		 WHERE (user_id = ? OR user_id IS NULL) AND deleted_at IS NOT NULL AND deleted_at > ?`,
-		userID, since,
+		 WHERE deleted_at IS NOT NULL AND deleted_at > ?`,
+		since,
 	)
 	if err != nil {
 		return nil, nil, err

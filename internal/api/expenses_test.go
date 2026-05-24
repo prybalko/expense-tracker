@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -383,7 +382,7 @@ func TestHandleDeleteExpense(t *testing.T) {
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("status: got %d want 204", rec.Code)
 		}
-		if _, err := env.db.GetExpense(env.user.ID, created.ID); err == nil {
+		if _, err := env.db.GetExpense(created.ID); err == nil {
 			t.Fatalf("expected expense to be deleted")
 		}
 	})
@@ -452,7 +451,7 @@ func TestHandleListChanges(t *testing.T) {
 		t.Fatalf("seed fresh: %v", err)
 	}
 	old.Description = "Old edited"
-	if err := env.db.UpdateExpense(env.user.ID, old); err != nil {
+	if err := env.db.UpdateExpense(old); err != nil {
 		t.Fatalf("update old: %v", err)
 	}
 
@@ -462,7 +461,7 @@ func TestHandleListChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed doomed: %v", err)
 	}
-	if err := env.db.DeleteExpense(env.user.ID, doomed.ID); err != nil {
+	if err := env.db.DeleteExpense(doomed.ID); err != nil {
 		t.Fatalf("delete doomed: %v", err)
 	}
 
@@ -600,16 +599,16 @@ func TestWriteHandlersSetServerTime(t *testing.T) {
 	})
 }
 
-// TestExpenseEndpointsScopedToUser verifies the redesigned read paths return
-// 404 / empty results when one authenticated user tries to access another
-// user's data. The pre-redesign global queries plus a global
-// (date, amount, description) unique index combined into a cross-user
-// confidentiality + write-loss bug; this test pins the per-user-scoped
-// behavior so it can't silently regress.
-func TestExpenseEndpointsScopedToUser(t *testing.T) {
+// TestExpenseEndpointsSharedAcrossUsers verifies the shared-household model:
+// every authenticated user can list, read, edit and delete every row, but
+// the original author (user_id) is preserved on update. The previous design
+// hid other users' rows; this test pins the intentional reversal so it
+// can't silently regress.
+func TestExpenseEndpointsSharedAcrossUsers(t *testing.T) {
 	env := newTestEnv(t)
 
-	// Second user with their own session.
+	// Second user. They never log in directly in this test, but their
+	// rows must be reachable to the seeded "alice" account via the API.
 	hash, err := auth.HashPassword("hunter2")
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
@@ -619,91 +618,89 @@ func TestExpenseEndpointsScopedToUser(t *testing.T) {
 		t.Fatalf("create user bob: %v", err)
 	}
 
-	withBob := func(req *http.Request) *http.Request {
-		ctx := context.WithValue(req.Context(), auth.UserContextKey, bob)
-		return req.WithContext(ctx)
-	}
-
-	// Alice and Bob each insert one expense with the same business-key tuple
-	// (date, amount, description). The per-user unique index must allow this.
+	// Alice and Bob each insert one expense. The per-user partial unique
+	// index still lets them share business-key tuples (same date/amount/desc
+	// for different users), so we differ the description here only to make
+	// the assertions readable.
 	date := time.Date(2026, 4, 15, 8, 30, 0, 0, time.UTC)
-	aliceExp, err := env.db.InsertExpense(4.50, "Coffee", "Eating Out", date, env.user.ID)
+	aliceExp, err := env.db.InsertExpense(4.50, "Alice coffee", "Eating Out", date, env.user.ID)
 	if err != nil {
 		t.Fatalf("alice insert: %v", err)
 	}
-	bobExp, err := env.db.InsertExpense(4.50, "Coffee", "Eating Out", date, bob.ID)
+	bobExp, err := env.db.InsertExpense(9.00, "Bob lunch", "Eating Out", date, bob.ID)
 	if err != nil {
 		t.Fatalf("bob insert: %v", err)
 	}
 
-	// Alice's list returns only Alice's row.
+	// Alice's list returns BOTH rows (date+id ordering: bob's row was
+	// inserted second so its id is larger and at the same date it sorts
+	// first under (date DESC, id DESC)).
 	req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses", nil))
 	rec := httptest.NewRecorder()
 	env.server.handleListExpenses(rec, req)
 	var aliceList listExpensesResponse
 	decodeBody(t, rec, &aliceList)
-	if len(aliceList.Items) != 1 || aliceList.Items[0].ID != aliceExp.ID {
-		t.Fatalf("alice list got %+v, want only alice row", aliceList.Items)
+	if len(aliceList.Items) != 2 {
+		t.Fatalf("alice list got %d items, want 2 (every household row)", len(aliceList.Items))
+	}
+	ids := map[int64]bool{}
+	for _, it := range aliceList.Items {
+		ids[it.ID] = true
+	}
+	if !ids[aliceExp.ID] || !ids[bobExp.ID] {
+		t.Fatalf("alice list missing one of the expected rows: %+v", aliceList.Items)
 	}
 
-	// Bob fetching Alice's row by id gets a 404, not Alice's data.
-	req = withBob(buildRequest(t, http.MethodGet, "/api/expenses/"+itoa(aliceExp.ID), nil))
-	req.SetPathValue("id", itoa(aliceExp.ID))
-	rec = httptest.NewRecorder()
-	env.server.handleGetExpense(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("bob get alice's row: got %d want 404", rec.Code)
-	}
-
-	// Bob trying to update Alice's row gets a 404.
-	req = withBob(buildRequest(t, http.MethodPatch, "/api/expenses/"+itoa(aliceExp.ID),
-		map[string]any{"amount": 999.0}))
-	req.SetPathValue("id", itoa(aliceExp.ID))
-	rec = httptest.NewRecorder()
-	env.server.handleUpdateExpense(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("bob update alice's row: got %d want 404", rec.Code)
-	}
-	// Verify Alice's row is unchanged.
-	got, err := env.db.GetExpense(env.user.ID, aliceExp.ID)
-	if err != nil {
-		t.Fatalf("alice re-read: %v", err)
-	}
-	if got.Amount != 4.50 {
-		t.Fatalf("alice's row was mutated: %+v", got)
-	}
-
-	// Bob trying to delete Alice's row succeeds (204) but does not actually
-	// remove it — DeleteExpense's WHERE filter scopes to bob.
-	req = withBob(buildRequest(t, http.MethodDelete, "/api/expenses/"+itoa(aliceExp.ID), nil))
-	req.SetPathValue("id", itoa(aliceExp.ID))
-	rec = httptest.NewRecorder()
-	env.server.handleDeleteExpense(rec, req)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("bob delete alice's row: got %d want 204", rec.Code)
-	}
-	if _, err := env.db.GetExpense(env.user.ID, aliceExp.ID); err != nil {
-		t.Fatalf("alice's row should still exist after bob's delete: %v", err)
-	}
-
-	// Bob's list returns only Bob's row — confirms ListExpensesAll is
-	// scoped per user, so the client's all-in cache for one user can
-	// never see another user's rows.
-	req = withBob(buildRequest(t, http.MethodGet, "/api/expenses", nil))
-	rec = httptest.NewRecorder()
-	env.server.handleListExpenses(rec, req)
-	var bobList listExpensesResponse
-	decodeBody(t, rec, &bobList)
-	if len(bobList.Items) != 1 || bobList.Items[0].ID != bobExp.ID {
-		t.Fatalf("bob list got %+v, want only bob's row (alice's row must not leak)", bobList.Items)
-	}
-
-	// Sanity: bob's own row is reachable to him.
-	req = withBob(buildRequest(t, http.MethodGet, "/api/expenses/"+itoa(bobExp.ID), nil))
+	// Alice fetches Bob's row by id — 200 with Bob's data.
+	req = env.withUser(buildRequest(t, http.MethodGet, "/api/expenses/"+itoa(bobExp.ID), nil))
 	req.SetPathValue("id", itoa(bobExp.ID))
 	rec = httptest.NewRecorder()
 	env.server.handleGetExpense(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("bob get bob's row: got %d want 200", rec.Code)
+		t.Fatalf("alice get bob's row: got %d want 200 (body=%q)", rec.Code, rec.Body.String())
+	}
+
+	// Alice updates Bob's row. The amount and description change, but the
+	// row's user_id must remain Bob — Alice editing Bob's row doesn't
+	// silently transfer authorship.
+	req = env.withUser(buildRequest(t, http.MethodPatch, "/api/expenses/"+itoa(bobExp.ID),
+		map[string]any{"amount": 11.11, "description": "Bob lunch (edited by Alice)"}))
+	req.SetPathValue("id", itoa(bobExp.ID))
+	rec = httptest.NewRecorder()
+	env.server.handleUpdateExpense(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("alice update bob's row: got %d want 200 (body=%q)", rec.Code, rec.Body.String())
+	}
+	got, err := env.db.GetExpense(bobExp.ID)
+	if err != nil {
+		t.Fatalf("re-read bob's row: %v", err)
+	}
+	if got.Amount != 11.11 || got.Description != "Bob lunch (edited by Alice)" {
+		t.Fatalf("alice's edit didn't land: %+v", got)
+	}
+	if got.UserID == nil || *got.UserID != bob.ID {
+		t.Fatalf("user_id must remain Bob (%d) after Alice's edit, got %v", bob.ID, got.UserID)
+	}
+
+	// Alice deletes Bob's row — 204, and the row really is gone.
+	req = env.withUser(buildRequest(t, http.MethodDelete, "/api/expenses/"+itoa(bobExp.ID), nil))
+	req.SetPathValue("id", itoa(bobExp.ID))
+	rec = httptest.NewRecorder()
+	env.server.handleDeleteExpense(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("alice delete bob's row: got %d want 204", rec.Code)
+	}
+	if _, err := env.db.GetExpense(bobExp.ID); err == nil {
+		t.Fatalf("bob's row should be tombstoned after alice's delete")
+	}
+
+	// After the delete only Alice's row survives in the list.
+	req = env.withUser(buildRequest(t, http.MethodGet, "/api/expenses", nil))
+	rec = httptest.NewRecorder()
+	env.server.handleListExpenses(rec, req)
+	var afterDelete listExpensesResponse
+	decodeBody(t, rec, &afterDelete)
+	if len(afterDelete.Items) != 1 || afterDelete.Items[0].ID != aliceExp.ID {
+		t.Fatalf("after delete got %+v, want only alice's row", afterDelete.Items)
 	}
 }

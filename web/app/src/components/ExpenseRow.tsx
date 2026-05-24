@@ -1,6 +1,7 @@
 import { theme, FONT } from "../theme";
 import { CategoryGlyph } from "./CategoryGlyph";
 import { useCategoryLookup } from "../hooks/useCategoryLookup";
+import { useCurrentUser } from "../hooks/useExpenses";
 import type { Expense } from "../types";
 
 type Props = {
@@ -15,6 +16,14 @@ export function ExpenseRow({ expense, slug, isFirst = false, onClick }: Props) {
   const lookup = useCategoryLookup();
   const cat = lookup.bySlug(slug) ?? lookup.fallback;
   const tone = cat.color;
+  // Mark rows authored by someone other than the signed-in user with a
+  // small dot next to the category. Legacy unowned rows (user_id == null)
+  // and rows the signed-in user wrote both count as mine. While
+  // /api/auth/me is still in flight we treat every row as mine to avoid
+  // briefly flashing dots on every row during the cold-start render.
+  const me = useCurrentUser().data;
+  const isNotMine =
+    me != null && expense.user_id != null && expense.user_id !== me.id;
 
   return (
     <button
@@ -22,6 +31,8 @@ export function ExpenseRow({ expense, slug, isFirst = false, onClick }: Props) {
       onClick={() => onClick?.(expense)}
       data-testid="expense-row"
       data-cat-slug={slug}
+      data-not-mine={isNotMine ? "true" : undefined}
+      aria-label={isNotMine ? "Added by someone else" : undefined}
       style={{
         width: "100%",
         display: "flex",
@@ -58,8 +69,29 @@ export function ExpenseRow({ expense, slug, isFirst = false, onClick }: Props) {
         >
           {expense.description || expense.category}
         </div>
-        <div style={{ fontSize: 12, color: t.ink2, marginTop: 2 }}>
-          {expense.category}
+        <div
+          style={{
+            fontSize: 12,
+            color: t.ink2,
+            marginTop: 2,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <span>{expense.category}</span>
+          {isNotMine ? (
+            <span
+              aria-hidden="true"
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: t.ink2,
+                flex: "0 0 auto",
+              }}
+            />
+          ) : null}
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

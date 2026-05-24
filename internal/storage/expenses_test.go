@@ -38,24 +38,24 @@ func (s *ExpenseTestSuite) TestDeleteExpense() {
 	s.Require().NoError(err)
 
 	// Get the expense to find its ID
-	expenses, err := s.db.ListExpenses(1, 100, 0)
+	expenses, err := s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Require().Len(expenses, 1)
 	expenseID := expenses[0].ID
 
 	// Delete the expense
-	err = s.db.DeleteExpense(1, expenseID)
+	err = s.db.DeleteExpense(expenseID)
 	s.Require().NoError(err)
 
 	// Verify it's gone
-	expenses, err = s.db.ListExpenses(1, 100, 0)
+	expenses, err = s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Empty(expenses, "expected no expenses after deletion")
 }
 
 func (s *ExpenseTestSuite) TestDeleteExpense_NonExistent() {
 	// Deleting a non-existent expense should not error (no-op)
-	err := s.db.DeleteExpense(1, 99999)
+	err := s.db.DeleteExpense(99999)
 	s.NoError(err, "deleting non-existent expense should not error")
 }
 
@@ -71,7 +71,7 @@ func (s *ExpenseTestSuite) TestDeleteExpense_OnlyDeletesTarget() {
 	s.Require().NoError(err)
 
 	// Get all expenses
-	expenses, err := s.db.ListExpenses(1, 100, 0)
+	expenses, err := s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Require().Len(expenses, 3)
 
@@ -85,11 +85,11 @@ func (s *ExpenseTestSuite) TestDeleteExpense_OnlyDeletesTarget() {
 	}
 	s.Require().NotZero(lunchID, "could not find Lunch expense")
 
-	err = s.db.DeleteExpense(1, lunchID)
+	err = s.db.DeleteExpense(lunchID)
 	s.Require().NoError(err)
 
 	// Verify only 2 remain and Lunch is gone
-	expenses, err = s.db.ListExpenses(1, 100, 0)
+	expenses, err = s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Len(expenses, 2, "expected 2 expenses after deletion")
 
@@ -118,7 +118,7 @@ func (s *ExpenseTestSuite) TestListExpenses() {
 		s.Require().NoError(err, "failed to create expense: %s", exp.description)
 	}
 
-	result, err := s.db.ListExpenses(1, 100, 0)
+	result, err := s.db.ListExpenses(100, 0)
 	s.Require().NoError(err)
 	s.Len(result, 3, "expected 3 expenses")
 
@@ -129,12 +129,10 @@ func (s *ExpenseTestSuite) TestListExpenses() {
 	}
 }
 
-// TestListExpensesAll covers the API's read path: every row visible to the
-// caller, ordered by (date DESC, id DESC). Visible means owned by the caller
-// OR unowned (user_id IS NULL — the legacy bucket from before per-user
-// scoping). The client caches this array under one query key and derives
-// every screen's view locally — leaking another user's owned rows here
-// would mean they show up on the wrong account's Insights screen.
+// TestListExpensesAll covers the API's read path: every live row regardless
+// of owner, ordered by (date DESC, id DESC). The app is a shared-household
+// ledger, so the list query has no per-user filter — Alice and Bob each
+// see every row, including legacy NULL-owner historical rows.
 func (s *ExpenseTestSuite) TestListExpensesAll() {
 	jan := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
 	feb := time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC)
@@ -169,37 +167,61 @@ func (s *ExpenseTestSuite) TestListExpensesAll() {
 	)
 	s.Require().NoError(err)
 
-	got, err := s.db.ListExpensesAll(1)
+	got, err := s.db.ListExpensesAll()
 	s.Require().NoError(err)
-	s.Require().Len(got, 4, "expected 3 owned + 1 legacy NULL row for user 1")
-	// (date DESC, id DESC) — Feb row first, then Jan rows in insert order
-	// reversed (newer id first when dates tie), then the 2018 legacy row last.
+	s.Require().Len(got, 5, "expected every live row across both users plus the legacy NULL row")
+	// (date DESC, id DESC). The two Jan rows by user 1 sit on different
+	// timestamps (jan and jan+2h) so Supermarket (jan+2h) outranks both
+	// Bakery (jan, id=1) and the partner's Other-user row (jan, id=4),
+	// which itself outranks Bakery via the id tiebreak.
 	s.Equal("Feb shop", got[0].Description)
 	s.Equal("Supermarket", got[1].Description)
-	s.Equal("Bakery", got[2].Description)
-	s.Equal("Legacy coffee", got[3].Description)
-	s.Nil(got[3].UserID, "legacy row should still be unowned")
-
-	// User 2 sees their own row + the same legacy NULL row.
-	got2, err := s.db.ListExpensesAll(2)
-	s.Require().NoError(err)
-	s.Require().Len(got2, 2, "expected 1 owned + 1 legacy NULL row for user 2")
-	s.Equal("Other user row", got2[0].Description)
-	s.Equal("Legacy coffee", got2[1].Description)
-
-	// An unknown user still sees the unowned legacy row (it's shared);
-	// they just have nothing of their own.
-	other, err := s.db.ListExpensesAll(999)
-	s.Require().NoError(err)
-	s.Require().Len(other, 1)
-	s.Equal("Legacy coffee", other[0].Description)
+	s.Equal("Other user row", got[2].Description)
+	s.Equal("Bakery", got[3].Description)
+	s.Equal("Legacy coffee", got[4].Description)
+	s.Nil(got[4].UserID, "legacy row should still be unowned")
 }
 
-// TestNullOwnedRowsAreEditableByAnyUser pins the policy that pre-multi-user
-// historical rows can be updated and deleted by whoever's logged in — the
-// alternative (immutable shared rows) would leave years of legacy data
-// permanently miscategorised with no way to fix it from the UI.
-func (s *ExpenseTestSuite) TestNullOwnedRowsAreEditableByAnyUser() {
+// TestUpdatePreservesAuthor pins the invariant that any authenticated user
+// can edit any row but the original author (user_id) is never overwritten.
+// This matters in the shared-household model: when Alice tweaks Bob's row,
+// it stays Bob's row in the ledger — the audit trail of who entered each
+// expense survives every downstream edit.
+func (s *ExpenseTestSuite) TestUpdatePreservesAuthor() {
+	bob := int64(2)
+	created, err := s.db.InsertExpense(7.50, "Old lunch", "Eating Out",
+		time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC), bob)
+	s.Require().NoError(err)
+	s.Require().NotNil(created.UserID)
+	s.Equal(bob, *created.UserID, "fresh row should be owned by its creator")
+
+	// Alice (user 1) edits Bob's row. UpdateExpense takes no userID
+	// arg — visibility and mutation are global in the shared model.
+	created.Description = "Old lunch (recategorised by Alice)"
+	created.Category = "Groceries"
+	s.Require().NoError(s.db.UpdateExpense(created))
+
+	reread, err := s.db.GetExpense(created.ID)
+	s.Require().NoError(err)
+	s.Equal("Old lunch (recategorised by Alice)", reread.Description)
+	s.Equal("Groceries", reread.Category)
+	s.Require().NotNil(reread.UserID, "user_id must not be cleared on update")
+	s.Equal(bob, *reread.UserID, "author must remain Bob even after Alice's edit")
+
+	// And the same row remains visible+editable in both directions —
+	// Bob can still delete what was originally his even though Alice
+	// touched it last.
+	s.Require().NoError(s.db.DeleteExpense(created.ID))
+	_, err = s.db.GetExpense(created.ID)
+	s.ErrorContains(err, "no rows")
+}
+
+// TestLegacyNullOwnedRowsAreEditable keeps coverage on the NULL-owner path
+// that previously needed special handling. With the shared-household model
+// the rule is trivial — any row, NULL-owner or not, is reachable to every
+// authenticated user — but legacy rows are still the most likely real
+// production data, so we pin that they survive the read/update/delete cycle.
+func (s *ExpenseTestSuite) TestLegacyNullOwnedRowsAreEditable() {
 	res, err := s.db.conn.Exec(
 		`INSERT INTO expenses (amount, description, category, date, user_id, updated_at)
 		 VALUES (?, ?, ?, ?, NULL, ?)`,
@@ -211,25 +233,22 @@ func (s *ExpenseTestSuite) TestNullOwnedRowsAreEditableByAnyUser() {
 	id, err := res.LastInsertId()
 	s.Require().NoError(err)
 
-	// User 1 reads it.
-	got, err := s.db.GetExpense(1, id)
+	got, err := s.db.GetExpense(id)
 	s.Require().NoError(err)
 	s.Equal("Old lunch", got.Description)
 	s.Nil(got.UserID)
 
-	// User 1 updates it; the row stays unowned afterward.
 	got.Description = "Old lunch (recategorised)"
 	got.Category = "Groceries"
-	s.Require().NoError(s.db.UpdateExpense(1, got))
-	reread, err := s.db.GetExpense(2, id)
-	s.Require().NoError(err, "user 2 should still see the legacy row")
+	s.Require().NoError(s.db.UpdateExpense(got))
+	reread, err := s.db.GetExpense(id)
+	s.Require().NoError(err)
 	s.Equal("Old lunch (recategorised)", reread.Description)
 	s.Equal("Groceries", reread.Category)
-	s.Nil(reread.UserID, "update must not silently claim a shared row")
+	s.Nil(reread.UserID, "update must not silently stamp a user onto a NULL row")
 
-	// User 2 deletes it; gone for everyone.
-	s.Require().NoError(s.db.DeleteExpense(2, id))
-	_, err = s.db.GetExpense(1, id)
+	s.Require().NoError(s.db.DeleteExpense(id))
+	_, err = s.db.GetExpense(id)
 	s.ErrorContains(err, "no rows")
 }
 
@@ -256,7 +275,7 @@ func (s *ExpenseTestSuite) TestUpdateBumpsUpdatedAt() {
 	originalUpdated := created.UpdatedAt
 	time.Sleep(2 * time.Millisecond)
 	created.Description = "Edited"
-	s.Require().NoError(s.db.UpdateExpense(1, created))
+	s.Require().NoError(s.db.UpdateExpense(created))
 	s.True(created.UpdatedAt.After(originalUpdated),
 		"UpdateExpense must advance updated_at: %v not after %v",
 		created.UpdatedAt, originalUpdated)
@@ -276,17 +295,17 @@ func (s *ExpenseTestSuite) TestDeleteExpense_SoftDeletes() {
 	since := time.Now().UTC()
 	time.Sleep(2 * time.Millisecond)
 
-	s.Require().NoError(s.db.DeleteExpense(1, created.ID))
+	s.Require().NoError(s.db.DeleteExpense(created.ID))
 
 	// Row no longer shows up in read paths.
-	_, err = s.db.GetExpense(1, created.ID)
+	_, err = s.db.GetExpense(created.ID)
 	s.Require().ErrorContains(err, "no rows")
-	all, err := s.db.ListExpensesAll(1)
+	all, err := s.db.ListExpensesAll()
 	s.Require().NoError(err)
 	s.Empty(all)
 
 	// But the changes endpoint reports the id in the deletion bucket.
-	upd, deletedIDs, err := s.db.ListExpensesChangedSince(1, since)
+	upd, deletedIDs, err := s.db.ListExpensesChangedSince(since)
 	s.Require().NoError(err)
 	s.Empty(upd, "deleted rows must not also surface in the updated bucket")
 	s.Require().Len(deletedIDs, 1)
@@ -313,7 +332,7 @@ func (s *ExpenseTestSuite) TestPartialUniqueIndexAllowsReuseAfterSoftDelete() {
 	first, err := s.db.InsertExpense(4.50, "Coffee", "Eating Out", date, 1)
 	s.Require().NoError(err)
 
-	s.Require().NoError(s.db.DeleteExpense(1, first.ID))
+	s.Require().NoError(s.db.DeleteExpense(first.ID))
 
 	// Re-inserting the exact same tuple must succeed — the partial unique
 	// index excludes the tombstone.
@@ -345,9 +364,9 @@ func (s *ExpenseTestSuite) TestListExpensesChangedSince_InsertsAndUpdates() {
 
 	// Row 1 edited after the cutoff — now appears as an update.
 	old.Description = "Old edited"
-	s.Require().NoError(s.db.UpdateExpense(1, old))
+	s.Require().NoError(s.db.UpdateExpense(old))
 
-	upd, deletedIDs, err := s.db.ListExpensesChangedSince(1, cutoff)
+	upd, deletedIDs, err := s.db.ListExpensesChangedSince(cutoff)
 	s.Require().NoError(err)
 	s.Empty(deletedIDs)
 	s.Require().Len(upd, 2)
@@ -368,7 +387,7 @@ func (s *ExpenseTestSuite) TestListExpensesChangedSince_InsertsAndUpdates() {
 func (s *ExpenseTestSuite) TestListExpensesChangedSince_BoundaryIsStrict() {
 	created, err := s.db.InsertExpense(10, "Row", "Other", time.Now(), 1)
 	s.Require().NoError(err)
-	upd, deletedIDs, err := s.db.ListExpensesChangedSince(1, created.UpdatedAt)
+	upd, deletedIDs, err := s.db.ListExpensesChangedSince(created.UpdatedAt)
 	s.Require().NoError(err)
 	s.Empty(upd, "passing back the exact updated_at must not re-emit the row")
 	s.Empty(deletedIDs)
@@ -383,17 +402,17 @@ func (s *ExpenseTestSuite) TestListExpensesPagination() {
 	}
 
 	// Test limit
-	expenses, err := s.db.ListExpenses(1, 2, 0)
+	expenses, err := s.db.ListExpenses(2, 0)
 	s.Require().NoError(err)
 	s.Len(expenses, 2, "expected 2 expenses with limit=2")
 
 	// Test offset
-	expenses, err = s.db.ListExpenses(1, 2, 2)
+	expenses, err = s.db.ListExpenses(2, 2)
 	s.Require().NoError(err)
 	s.Len(expenses, 2, "expected 2 expenses with limit=2, offset=2")
 
 	// Test offset beyond data
-	expenses, err = s.db.ListExpenses(1, 10, 10)
+	expenses, err = s.db.ListExpenses(10, 10)
 	s.Require().NoError(err)
 	s.Empty(expenses, "expected 0 expenses with offset beyond data")
 }

@@ -84,8 +84,7 @@ type changesResponse struct {
 }
 
 func (s *Server) handleGetExpense(w http.ResponseWriter, r *http.Request) {
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok {
+	if _, ok := auth.UserFromContext(r.Context()); !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
@@ -94,7 +93,7 @@ func (s *Server) handleGetExpense(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	exp, err := s.db.GetExpense(user.ID, id)
+	exp, err := s.db.GetExpense(id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "expense not found")
@@ -108,21 +107,19 @@ func (s *Server) handleGetExpense(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, exp)
 }
 
-// handleListExpenses returns every live expense owned by the authenticated
-// user. The client caches the array under a single React Query key and
-// derives Feed, Insights, and CategoryDetails views from it locally, so
-// this endpoint takes no filter / pagination parameters by design. The
-// response includes `serverTime` so the client can pin its initial
-// lastSyncAt; subsequent Feed mounts call /api/expenses/changes?since=...
-// with that value rather than refetching the whole list.
+// handleListExpenses returns every live expense across the whole household.
+// The app intentionally shares one ledger across every authenticated user,
+// so this endpoint takes no per-user filter. The client caches the array
+// under a single React Query key and derives Feed, Insights, and
+// CategoryDetails views from it locally; the response includes `serverTime`
+// so the client can pin its initial lastSyncAt for subsequent diffs.
 func (s *Server) handleListExpenses(w http.ResponseWriter, r *http.Request) {
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok {
+	if _, ok := auth.UserFromContext(r.Context()); !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
-	items, err := s.db.ListExpensesAll(user.ID)
+	items, err := s.db.ListExpensesAll()
 	if err != nil {
 		log.Printf("api: list expenses: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -149,8 +146,7 @@ func (s *Server) handleListExpenses(w http.ResponseWriter, r *http.Request) {
 // marshal) — any other format is a client bug, not a transient condition
 // to retry, so we answer 400 instead of silently returning the full list.
 func (s *Server) handleListChanges(w http.ResponseWriter, r *http.Request) {
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok {
+	if _, ok := auth.UserFromContext(r.Context()); !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
@@ -168,7 +164,7 @@ func (s *Server) handleListChanges(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	updated, deletedIDs, err := s.db.ListExpensesChangedSince(user.ID, since)
+	updated, deletedIDs, err := s.db.ListExpensesChangedSince(since)
 	if err != nil {
 		log.Printf("api: list changes: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -261,8 +257,7 @@ type updateExpenseRequest struct {
 }
 
 func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok {
+	if _, ok := auth.UserFromContext(r.Context()); !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
@@ -272,7 +267,7 @@ func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := s.db.GetExpense(user.ID, id)
+	existing, err := s.db.GetExpense(id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "expense not found")
@@ -325,7 +320,7 @@ func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
 		existing.Date = d
 	}
 
-	if err := s.db.UpdateExpense(user.ID, existing); err != nil {
+	if err := s.db.UpdateExpense(existing); err != nil {
 		if errors.Is(err, storage.ErrDuplicateExpense) {
 			// New (date, amount, description) collides with another row.
 			// Return 409 so the offline-queue replay path drops the entry
@@ -343,8 +338,7 @@ func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteExpense(w http.ResponseWriter, r *http.Request) {
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok {
+	if _, ok := auth.UserFromContext(r.Context()); !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
@@ -353,7 +347,7 @@ func (s *Server) handleDeleteExpense(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	if err := s.db.DeleteExpense(user.ID, id); err != nil {
+	if err := s.db.DeleteExpense(id); err != nil {
 		log.Printf("api: delete expense: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
