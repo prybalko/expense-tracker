@@ -21,7 +21,6 @@
   { "slug": "movies",    "label": "Movies",    "icon": "movies",    "color": { "bg": "#EBD0E0", "ink": "#5C2350" } },
   { "slug": "games",     "label": "Games",     "icon": "games",     "color": { "bg": "#D2E4D4", "ink": "#1F4A2A" } },
   { "slug": "hobby",     "label": "Hobby",     "icon": "hobby",     "color": { "bg": "#D4E2DE", "ink": "#1F4A45" } },
-  { "slug": "beauty",    "label": "Beauty",    "icon": "beauty",    "color": { "bg": "#EDD3DC", "ink": "#5E2444" } },
   { "slug": "laundry",   "label": "Laundry",   "icon": "laundry",   "color": { "bg": "#D2DDE4", "ink": "#1F3F4D" } },
   { "slug": "charity",   "label": "Charity",   "icon": "charity",   "color": { "bg": "#D8E5CE", "ink": "#26471A" } },
   { "slug": "tools",     "label": "Tools",     "icon": "tools",     "color": { "bg": "#D9DEEA", "ink": "#27354E" } },

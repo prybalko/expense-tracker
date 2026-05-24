@@ -9,5 +9,6 @@
   { "slug": "entertainment", "label": "Entertainment", "icon": "entertainment", "color": { "bg": "#E0D6EE", "ink": "#3D205C" } },
   { "slug": "travel",        "label": "Travel",        "icon": "travel",        "color": { "bg": "#F2D7DA", "ink": "#6E2730" } },
   { "slug": "gifts",         "label": "Gifts",         "icon": "gifts",         "color": { "bg": "#F1D6DD", "ink": "#612434" } },
+  { "slug": "beauty",        "label": "Beauty",        "icon": "beauty",        "color": { "bg": "#EDD3DC", "ink": "#5E2444" } },
   { "slug": "other",         "label": "Other",         "icon": "other",         "color": { "bg": "#E0DCD4", "ink": "#3A352E" } }
 ]

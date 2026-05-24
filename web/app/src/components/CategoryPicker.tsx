@@ -20,18 +20,16 @@ function orderCategories(
   const declIdx = new Map<string, number>();
   categories.forEach((c, i) => declIdx.set(c.label, i));
 
-  const used = [...categories].sort((a, b) => {
+  // Sort the entire list by usage (desc), with declaration order as the
+  // tie-breaker. Every page — not just the first — surfaces the most-used
+  // categories before less-used ones, so a never-used tile ends up at the
+  // very end regardless of which page it falls on.
+  return [...categories].sort((a, b) => {
     const ca = usageCounts[a.label] ?? 0;
     const cb = usageCounts[b.label] ?? 0;
     if (ca !== cb) return cb - ca;
     return (declIdx.get(a.label) ?? 0) - (declIdx.get(b.label) ?? 0);
   });
-  const top = used.slice(0, PAGE_SIZE);
-  const topSet = new Set(top.map((c) => c.label));
-  const rest = categories
-    .filter((c) => !topSet.has(c.label))
-    .sort((a, b) => a.label.localeCompare(b.label));
-  return [...top, ...rest];
 }
 
 export function CategoryPicker({ value, onChange, usageCounts = {} }: Props) {
