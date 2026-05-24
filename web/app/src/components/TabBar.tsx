@@ -67,7 +67,7 @@ export function TabBar({ current, onNavigate, onAdd }: Props) {
       style={{
         background: t.card,
         borderTop: `1px solid ${t.rule}`,
-        padding: "12px",
+        padding: "6px 14px max(6px, env(safe-area-inset-bottom))",
         display: "flex",
         alignItems: "center",
         gap: 8,

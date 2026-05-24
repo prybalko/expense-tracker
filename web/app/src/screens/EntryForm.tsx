@@ -282,9 +282,15 @@ function FormBody({
       </div>
 
       <div
-        style={{ flex: 1, overflow: "hidden", WebkitOverflowScrolling: "touch" }}
+        style={{
+          flex: 1,
+          overflow: "hidden",
+          WebkitOverflowScrolling: "touch",
+          display: "flex",
+          flexDirection: "column",
+        }}
       >
-        <div style={{ textAlign: "center", padding: "14px 0 14px" }}>
+        <div style={{ textAlign: "center", padding: "14px 0 14px", flexShrink: 0 }}>
           {/*<div*/}
           {/*  style={{*/}
           {/*    fontSize: 11,*/}
@@ -327,6 +333,8 @@ function FormBody({
           </div>
         </div>
 
+        <div style={{ flex: 1 }} aria-hidden />
+
         <CategoryPicker value={cat} onChange={onCatChange} usageCounts={usageCounts} />
 
         <div
@@ -335,6 +343,7 @@ function FormBody({
             gap: 8,
             padding: "6px 14px 14px",
             alignItems: "stretch",
+            flexShrink: 0,
           }}
         >
           <div style={{ flex: "0 0 46%", minWidth: 0 }}>
