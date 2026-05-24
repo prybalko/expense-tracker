@@ -493,6 +493,122 @@ func (s *E2ETestSuite) TestFeedSyncPicksUpServerSideInserts() {
 	s.Require().NoError(err, "expected the synced row's amount")
 }
 
+// TestFeedSyncPicksUpServerSideDeletes is the mirror of the insert test
+// above, pinning the `deletedIds` half of the /api/expenses/changes
+// contract. Reported in the wild as "I delete an item on phone A but it
+// stays on phone B forever"; the round trip the user expects is:
+//
+//  1. Phone B's full-list fetch lands → row visible, lastSyncAt = T0.
+//  2. Phone A soft-deletes the row → row stays in the DB with deleted_at
+//     set to T1 > T0.
+//  3. Phone B resumes the PWA (or pulls to refresh) → useSyncExpenses hits
+//     /api/expenses/changes?since=T0 → server emits deletedIds=[id] →
+//     mergeChanges drops the id from the cache → the row vanishes.
+//
+// Trigger choice: we drive `visibilitychange` rather than the pull gesture
+// because it's the realistic phone-switching scenario, exercises the
+// useSyncOnVisible hook end-to-end, and doesn't depend on touch-event
+// emulation. The SPA Feed↔Insights bounce no longer fires a sync (that
+// auto-trigger was the source of the wasted-request UX bug), so a tab tap
+// alone wouldn't surface the deletion — the new test contract is "if the
+// user is here and the page returns to the foreground, deletes propagate".
+func (s *E2ETestSuite) TestFeedSyncPicksUpServerSideDeletes() {
+	s.login()
+
+	// 1. Seed a row through the UI. The mutation's onSuccess upserts it
+	//    into the cache and advances lastSyncAt off X-Server-Time, so the
+	//    subsequent diff has a real cursor to send back.
+	s.addExpense("33.33", "Synced Delete Target", "groceries")
+	err := s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(1)
+	s.Require().NoError(err, "expected the seeded row before out-of-band delete")
+
+	// 2. Soft-delete the row directly in the DB the running server is
+	//    using — same out-of-band trick the insert test uses, just on the
+	//    DeleteExpense side. The admin bootstrap user (testuser, id=1) is
+	//    the only owner, so list-and-match by description is unambiguous.
+	db, err := storage.NewDB(dbPath)
+	s.Require().NoError(err, "could not open DB for out-of-band delete")
+	all, err := db.ListExpensesAll(1)
+	s.Require().NoError(err, "could not list expenses to find target id")
+	var targetID int64
+	for _, e := range all {
+		if e.Description == "Synced Delete Target" {
+			targetID = e.ID
+			break
+		}
+	}
+	s.Require().NotZero(targetID, "could not find seeded row in DB")
+	s.Require().NoError(db.DeleteExpense(1, targetID), "soft-delete the target row")
+	db.Close()
+
+	// 3. Simulate the PWA returning to the foreground. The useSyncOnVisible
+	//    handler in Feed.tsx checks document.visibilityState before firing;
+	//    Playwright's page reports "visible" by default, so dispatching the
+	//    event is sufficient to exercise the handler. This matches what
+	//    Safari fires when the user re-selects the PWA from the app
+	//    switcher — the exact path the wasted-on-mount sync used to take
+	//    behind the scenes.
+	_, err = s.page.Evaluate(`() => document.dispatchEvent(new Event('visibilitychange'))`)
+	s.Require().NoError(err, "failed to dispatch visibilitychange")
+
+	// 4. Row must be gone and the hero total must reflect zero. The two
+	//    assertions together pin both halves of the merge: the row drop
+	//    (cache mutation) and the downstream recomputed total (selector
+	//    re-runs). If the row stays, the regression is somewhere on the
+	//    `deletedIds` path; if the row drops but the hero stays at 33.33,
+	//    the cache mutation isn't invalidating the derived insights.
+	err = s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(0)
+	s.Require().NoError(err, "row should disappear after server-side delete + sync")
+	err = s.expect.Locator(s.page.Locator(tid("hero-total"))).ToContainText("0.00")
+	s.Require().NoError(err, "hero total should drop to 0.00 once the row syncs out")
+}
+
+// TestFeedTabSwitchDoesNotFireSync is the negative half of the contract
+// the user asked for: tapping between Feed and Insights MUST NOT issue an
+// /api/expenses/changes request. Before the redesign every tab toggle
+// paid a round-trip, and when nothing had changed on the server the
+// response was an empty `{updated:[], deletedIds:[]}` — visibly a wasted
+// call when watching the network panel. We intercept the route and assert
+// it stays cold across an in-app navigation.
+func (s *E2ETestSuite) TestFeedTabSwitchDoesNotFireSync() {
+	s.login()
+
+	// Wait for the cold-start GET /api/expenses to settle before we install
+	// the counter — otherwise the initial fetch (which IS expected) would
+	// be conflated with the tab-toggle behaviour under test.
+	err := s.expect.Locator(s.page.Locator(tid("feed-screen"))).ToBeVisible()
+	s.Require().NoError(err, "feed should be visible after login")
+
+	changesCalls := 0
+	err = s.page.Route("**/api/expenses/changes**", func(route playwright.Route) {
+		changesCalls++
+		// Let the request continue so any code path that did fire a diff
+		// still works end-to-end; we only care about counting hits.
+		_ = route.Continue()
+	})
+	s.Require().NoError(err, "failed to install /changes route counter")
+
+	// Drive a Feed → Insights → Feed bounce through the TabBar (the
+	// realistic phone-tap path). If the old mount-time `useEffect` is ever
+	// resurrected, this round trip will increment changesCalls.
+	err = s.page.Locator(tid("tab-insights")).Click()
+	s.Require().NoError(err, "failed to switch to insights")
+	err = s.expect.Locator(s.page.Locator(tid("insights-screen"))).ToBeVisible()
+	s.Require().NoError(err, "insights screen not visible after tab switch")
+	err = s.page.Locator(tid("tab-feed")).Click()
+	s.Require().NoError(err, "failed to switch back to feed")
+	err = s.expect.Locator(s.page.Locator(tid("feed-screen"))).ToBeVisible()
+	s.Require().NoError(err, "feed screen not visible after returning")
+
+	// Give any in-flight request a moment to land in the counter before
+	// asserting. The Feed re-mount is synchronous; the counter would
+	// already see the call if one was made — but a small sleep guards
+	// against a future microtask-scheduled mutation slipping through.
+	time.Sleep(150 * time.Millisecond)
+	s.Require().Equal(0, changesCalls,
+		"tab toggle must not call /api/expenses/changes — got %d call(s)", changesCalls)
+}
+
 // TestDeleteThenReinsertSameTuple pins the partial unique index: after a
 // soft-delete, the user can re-enter the exact same (date, amount,
 // description) tuple without a 409. This is the practical user-facing

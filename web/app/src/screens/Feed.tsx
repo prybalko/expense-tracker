@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { theme, FONT } from "../theme";
 import { Hero } from "../components/Hero";
 import { DayGroup } from "../components/DayGroup";
 import { TabBar } from "../components/TabBar";
+import { PullToRefreshIndicator } from "../components/PullToRefreshIndicator";
 import {
   useAllExpenses,
   useInsightsFor,
@@ -13,6 +14,7 @@ import { useCategoryLookup } from "../hooks/useCategoryLookup";
 import { useErrorBanner } from "../hooks/useErrorBanner";
 import { messageForReadError } from "../api/errors";
 import { dayLabel, groupByDay } from "../groupByDay";
+import { usePullToRefresh, useSyncOnVisible } from "../hooks/usePullToRefresh";
 import type { Expense } from "../types";
 
 const MONTH_NAMES = [
@@ -43,17 +45,42 @@ export function Feed() {
   const lookup = useCategoryLookup();
   const slugFor = lookup.slugByLabel;
 
-  // Fire a delta sync every time the Feed mounts. useSyncExpenses reads
-  // lastSyncAt from the cache; if the cold-start fetch hasn't landed it
-  // no-ops and this effect becomes a cheap cache-hit. Using sync.mutate
-  // (stable across renders in React Query v5) lets us keep the empty deps
-  // array honest — one sync per navigation to /, not per render.
+  // Delta sync no longer fires on every Feed mount. The sync
+  // is user-driven (pull-to-refresh) plus a visibilitychange handler
+  // for the PWA-resumed-from-background case.
   const syncMutate = sync.mutate;
-  useEffect(() => {
-    syncMutate(undefined, {
-      onError: (err) => showError(messageForReadError(err)),
+  const triggerSync = useCallback(() => {
+    return new Promise<void>((resolve) => {
+      let isSettled = false;
+      const timer = setTimeout(() => {
+        if (!isSettled) {
+          isSettled = true;
+          showError("Couldn't refresh. The request took too long.");
+          resolve();
+        }
+      }, 10000); // 10s timeout for the pull-to-refresh spinner
+
+      syncMutate(undefined, {
+        onSuccess: () => {
+          if (isSettled) return;
+          isSettled = true;
+          clearTimeout(timer);
+          resolve();
+        },
+        onError: (err) => {
+          if (isSettled) return;
+          isSettled = true;
+          clearTimeout(timer);
+          showError(messageForReadError(err));
+          resolve();
+        },
+      });
     });
   }, [syncMutate, showError]);
+
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const pull = usePullToRefresh(scrollRef, triggerSync);
+  useSyncOnVisible(triggerSync);
 
   // Surface cold-start fetch failures the same way. Without this the Feed
   // would quietly sit on an empty state and the user would have no signal
@@ -120,12 +147,20 @@ export function Feed() {
       }}
     >
       <div
+        ref={scrollRef}
         className="scroll-y"
         style={{
           flex: 1,
           padding: "calc(12px + env(safe-area-inset-top)) 16px 12px",
+          transform: `translateY(${pull.pullDistance}px)`,
+          transition: pull.pullDistance === 0 ? "transform 220ms ease-out" : "none",
         }}
       >
+        <PullToRefreshIndicator
+          pullDistance={pull.pullDistance}
+          committed={pull.committed}
+          isRefreshing={pull.isRefreshing}
+        />
         <Hero
           monthName={heroMonth}
           total={heroTotal}

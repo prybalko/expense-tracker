@@ -24,6 +24,7 @@ function TabButton({ id, label, icon, current, onNavigate }: BtnProps) {
   return (
     <button
       type="button"
+      data-testid={`tab-${id}`}
       onClick={() => {
         vibrate();
         onNavigate(id);

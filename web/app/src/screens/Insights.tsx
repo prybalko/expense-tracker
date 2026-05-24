@@ -95,6 +95,7 @@ export function Insights() {
 
   return (
     <div
+      data-testid="insights-screen"
       style={{
         height: "100dvh",
         overflow: "hidden",
