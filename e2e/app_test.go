@@ -51,7 +51,10 @@ func (s *E2ETestSuite) SetupTest() {
 	s.Require().NoError(err, "could not clear expenses")
 	db.Close()
 
-	ctx, err := s.browser.NewContext(playwright.BrowserNewContextOptions{})
+	ctx, err := s.browser.NewContext(playwright.BrowserNewContextOptions{
+		// Block the SW so hard navigations hit the network, not a stale cache.
+		ServiceWorkers: playwright.ServiceWorkerPolicyBlock,
+	})
 	s.Require().NoError(err, "could not create context")
 
 	page, err := ctx.NewPage()
@@ -439,6 +442,101 @@ func (s *E2ETestSuite) TestCategoryDetailsFromInsights() {
 
 	err = s.expect.Locator(s.page.Locator(tid("entry-form"))).ToBeVisible()
 	s.Require().NoError(err, "entry form should open from details click")
+}
+
+// goInsights switches to the Insights tab and waits for the screen.
+func (s *E2ETestSuite) goInsights() {
+	err := s.page.Locator(tid("tab-insights")).Click()
+	s.Require().NoError(err, "failed to switch to insights")
+	err = s.expect.Locator(s.page.Locator(tid("insights-screen"))).ToBeVisible()
+	s.Require().NoError(err, "insights screen not visible")
+}
+
+// Month treemap → Year view (bars + rows) → year-scoped drilldown → back.
+func (s *E2ETestSuite) TestInsightsYearViewAndDrilldown() {
+	s.login()
+	s.addExpense("12.50", "Bakery", "groceries")
+	s.addExpense("30.00", "Train", "transport")
+
+	s.goInsights()
+
+	// Month view (default) renders the treemap tiles.
+	err := s.expect.Locator(s.page.Locator(tid("category-row-groceries"))).ToBeVisible()
+	s.Require().NoError(err, "groceries treemap tile not visible in month view")
+
+	// Switch to the Year view.
+	err = s.page.Locator(tid("segment-year")).Click()
+	s.Require().NoError(err, "failed to switch to year view")
+	err = s.expect.Locator(s.page.Locator(tid("segment-year"))).ToHaveAttribute("aria-pressed", "true")
+	s.Require().NoError(err, "year segment should be selected")
+
+	transportRow := s.page.Locator(tid("category-row-transport"))
+	err = s.expect.Locator(transportRow).ToBeVisible()
+	s.Require().NoError(err, "transport category row not visible in year view")
+
+	// Drill into a category from the year view (year-scoped detail).
+	err = transportRow.Click()
+	s.Require().NoError(err, "failed to open transport category")
+	err = s.expect.Locator(s.page.Locator(tid("category-details"))).ToBeVisible()
+	s.Require().NoError(err, "category details not visible")
+	err = s.expect.Locator(s.page.Locator(tid("category-details-count"))).ToContainText("1 transaction")
+	s.Require().NoError(err, "expected 1 transaction in transport detail")
+
+	// Back returns to the Year view.
+	err = s.page.Locator(tid("category-details-back")).Click()
+	s.Require().NoError(err, "failed to go back from category details")
+	err = s.expect.Locator(s.page.Locator(tid("segment-year"))).ToHaveAttribute("aria-pressed", "true")
+	s.Require().NoError(err, "should return to the year view")
+}
+
+// Period stepper: next clamped at current month, prev is empty, forward returns.
+func (s *E2ETestSuite) TestInsightsPeriodNavigation() {
+	s.login()
+	s.addExpense("20.00", "Lunch", "eating")
+
+	s.goInsights()
+	err := s.expect.Locator(s.page.Locator(tid("category-row-eating"))).ToBeVisible()
+	s.Require().NoError(err, "eating tile not visible in current month")
+
+	// At the current month the next chevron is clamped.
+	err = s.expect.Locator(s.page.Locator(tid("period-next"))).ToBeDisabled()
+	s.Require().NoError(err, "next period should be disabled at current month")
+
+	// Step to the previous (empty) month.
+	err = s.page.Locator(tid("period-prev")).Click()
+	s.Require().NoError(err, "failed to step to previous month")
+	err = s.expect.Locator(s.page.GetByText("No spending in this period.")).ToBeVisible()
+	s.Require().NoError(err, "previous month should be empty")
+	err = s.expect.Locator(s.page.Locator(tid("category-row-eating"))).ToHaveCount(0)
+	s.Require().NoError(err, "eating tile should be gone in the previous month")
+
+	// Step forward to the current month again; next re-clamps.
+	err = s.page.Locator(tid("period-next")).Click()
+	s.Require().NoError(err, "failed to step forward")
+	err = s.expect.Locator(s.page.Locator(tid("category-row-eating"))).ToBeVisible()
+	s.Require().NoError(err, "eating tile should return in the current month")
+	err = s.expect.Locator(s.page.Locator(tid("period-next"))).ToBeDisabled()
+	s.Require().NoError(err, "next period should be disabled again at current month")
+}
+
+// Mine/All toggle: single user owns everything, so Mine keeps it visible.
+func (s *E2ETestSuite) TestInsightsMineAllFilter() {
+	s.login()
+	s.addExpense("15.00", "Coffee", "eating")
+
+	s.goInsights()
+
+	err := s.expect.Locator(s.page.Locator(tid("segment-all"))).ToHaveAttribute("aria-pressed", "true")
+	s.Require().NoError(err, "All should be the default scope")
+	err = s.expect.Locator(s.page.Locator(tid("category-row-eating"))).ToBeVisible()
+	s.Require().NoError(err, "eating tile visible under All")
+
+	err = s.page.Locator(tid("segment-mine")).Click()
+	s.Require().NoError(err, "failed to switch to Mine")
+	err = s.expect.Locator(s.page.Locator(tid("segment-mine"))).ToHaveAttribute("aria-pressed", "true")
+	s.Require().NoError(err, "Mine should be selected")
+	err = s.expect.Locator(s.page.Locator(tid("category-row-eating"))).ToBeVisible()
+	s.Require().NoError(err, "own expense should remain visible under Mine")
 }
 
 // TestFeedSyncPicksUpServerSideInserts documents the delta-sync contract:

@@ -32,16 +32,25 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
-        // Read-only offline: NetworkFirst lets the SW serve the last-seen
-        // expenses payload when the user is offline (subway, airplane mode)
-        // while always preferring fresh data when the network is available.
+        // Read-only offline with a split read strategy:
+        //   - List (/api/expenses): StaleWhileRevalidate. Reload / PWA
+        //     relaunch paints the Hero off the cached payload in a
+        //     microtask instead of waiting on the network, collapsing the
+        //     "0 → real total" flash to one frame. The background
+        //     revalidate keeps the cache warm; multi-device deltas land
+        //     via the separate /api/expenses/changes call fired from
+        //     useSyncOnVisible on every Feed visibility change.
+        //   - Detail (/api/expenses/:id): NetworkFirst. The EntryForm
+        //     should always open against the latest server-side row when
+        //     online so a cross-device edit doesn't overwrite fresher
+        //     data; the cache is purely the offline fallback.
         // Writes (POST/PATCH/DELETE) have no rule and pass through to the
         // network — failing them is preferable to faking success.
         runtimeCaching: [
           {
             urlPattern: /\/api\/expenses(\?.*)?$/,
             method: 'GET',
-            handler: 'NetworkFirst',
+            handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'api-expenses',
               expiration: { maxEntries: 50 },

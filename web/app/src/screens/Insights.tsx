@@ -3,9 +3,15 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { theme, FONT } from "../theme";
 import { TabBar } from "../components/TabBar";
 import { CategoryGlyph } from "../components/CategoryGlyph";
-import { useInsightsFor } from "../hooks/useExpenses";
+import { Segmented } from "../components/Segmented";
+import { PeriodNav } from "../components/PeriodNav";
+import { MonthlyBars } from "../components/MonthlyBars";
+import { Treemap, type TreemapCat } from "../components/Treemap";
+import { useAllExpenses, useCurrentUser } from "../hooks/useExpenses";
 import { useCategoryLookup } from "../hooks/useCategoryLookup";
+import { deriveInsights, deriveYearInsights } from "../insights/derive";
 import { fmtEUR } from "../format";
+import type { CategoryBreakdown } from "../types";
 
 const MONTH_NAMES = [
   "January",
@@ -22,75 +28,218 @@ const MONTH_NAMES = [
   "December",
 ];
 
+type Person = "all" | "mine";
+type Period = "month" | "year";
+
+// Compact category list for the year view (month view uses the treemap).
+function YearCategoryRows({
+  cats,
+  onSelect,
+}: {
+  cats: TreemapCat[];
+  onSelect: (slug: string) => void;
+}) {
+  const t = theme;
+  return (
+    <div style={{ background: t.card, borderRadius: 22, overflow: "hidden" }}>
+      {cats.map((c, i) => (
+        <button
+          key={c.id}
+          type="button"
+          data-testid={`category-row-${c.slug}`}
+          onClick={() => onSelect(c.slug)}
+          style={{
+            width: "100%",
+            textAlign: "left",
+            cursor: "pointer",
+            background: "transparent",
+            border: "none",
+            fontFamily: FONT,
+            color: t.ink,
+            padding: "13px 16px",
+            borderTop: i === 0 ? "none" : `1px solid ${t.rule}`,
+            display: "flex",
+            alignItems: "center",
+            gap: 13,
+          }}
+        >
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 11,
+              background: c.color.bg,
+              color: c.color.ink,
+              display: "grid",
+              placeItems: "center",
+              flex: "0 0 auto",
+            }}
+          >
+            <CategoryGlyph icon={c.icon} size={17} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+              }}
+            >
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{c.label}</span>
+              <span
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {fmtEUR(c.amount, { cents: false })}
+              </span>
+            </div>
+            <div
+              style={{
+                marginTop: 7,
+                height: 5,
+                borderRadius: 3,
+                background: t.bg,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${c.pct * 100}%`,
+                  height: "100%",
+                  background: c.color.ink,
+                  opacity: 0.85,
+                }}
+              />
+            </div>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Insights() {
   const t = theme;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const today = useMemo(() => new Date(), []);
-  // Initial period: prefer ?year=&month= (set by the back-arrow on
-  // CategoryDetails so we land on the same month the user drilled in from),
-  // otherwise default to "this month."
-  const [period, setPeriod] = useState(() => {
-    const y = parseInt(searchParams.get("year") ?? "", 10);
-    const m = parseInt(searchParams.get("month") ?? "", 10);
-    if (Number.isFinite(y) && y > 0 && Number.isFinite(m) && m >= 1 && m <= 12) {
-      return { year: y, month: m };
-    }
-    return { year: today.getFullYear(), month: today.getMonth() + 1 };
-  });
-  // Derived from the cached all-expenses array — switching months recomputes
-  // off cache instead of issuing a new request, so the totals/chart never
-  // snap back to 0 between periods.
-  const insights = useInsightsFor(period.year, period.month);
   const lookup = useCategoryLookup();
 
-  const data = insights.data;
-  const monthLabel = data?.monthName ?? MONTH_NAMES[period.month - 1] ?? "";
-  const total = data?.total ?? 0;
-  const avgPerDay = data?.averageSpending ?? 0;
-  const avgLabel = data?.averageLabel ?? "Per day";
-  const chart = data?.chart ?? [];
-  const maxValue = data?.maxChartValue ?? 0;
-  const cats = data?.categories ?? [];
+  // Seed from the URL so CategoryDetails' back-arrow restores the period/view.
+  const [period, setPeriod] = useState<Period>(() =>
+    searchParams.get("view") === "year" ? "year" : "month",
+  );
+  const [person, setPerson] = useState<Person>("all");
+  const [cursor, setCursor] = useState(() => {
+    const y = parseInt(searchParams.get("year") ?? "", 10);
+    const m = parseInt(searchParams.get("month") ?? "", 10);
+    let year = Number.isFinite(y) && y > 0 ? y : today.getFullYear();
+    let month =
+      Number.isFinite(m) && m >= 1 && m <= 12 ? m : today.getMonth() + 1;
+    // Clamp a future (stale/hand-edited) URL to the current month.
+    const todayAbs = today.getFullYear() * 12 + today.getMonth();
+    if (year * 12 + (month - 1) > todayAbs) {
+      year = today.getFullYear();
+      month = today.getMonth() + 1;
+    }
+    return { year, month };
+  });
 
-  const todayDay = today.getDate();
-  const todayYear = today.getFullYear();
-  // Derive period navigation state from the local `period` rather than the
-  // server response: when the query is still loading, `data` reflects the
-  // *previous* period, so trusting `data.isCurrentPeriod` lets a fast
-  // re-click step past today into a future month.
-  const isCurrent =
-    period.year === todayYear && period.month === today.getMonth() + 1;
+  const all = useAllExpenses();
+  const me = useCurrentUser().data;
 
-  const prevPeriod =
-    period.month === 1
-      ? { year: period.year - 1, month: 12 }
-      : { year: period.year, month: period.month - 1 };
-  const nextPeriod =
-    period.month === 12
-      ? { year: period.year + 1, month: 1 }
-      : { year: period.year, month: period.month + 1 };
+  // "Mine" = legacy unowned rows + the signed-in user's (matches ExpenseRow).
+  const filtered = useMemo(() => {
+    const list = all.data ?? [];
+    if (person === "all") return list;
+    return list.filter(
+      (e) => e.user_id == null || (me != null && e.user_id === me.id),
+    );
+  }, [all.data, person, me]);
 
-  const prevMonthName = MONTH_NAMES[prevPeriod.month - 1] ?? "";
+  const monthView = useMemo(
+    () => deriveInsights(filtered, cursor.year, cursor.month, today),
+    [filtered, cursor.year, cursor.month, today],
+  );
+  const yearView = useMemo(
+    () => deriveYearInsights(filtered, cursor.year, today),
+    [filtered, cursor.year, today],
+  );
 
-  // Show year in labels whenever we're not in the current calendar year —
-  // without it, stepping back from January looks identical to stepping back
-  // from December (both chips just say a month name) and the user can't
-  // tell which December/November/etc. they're looking at.
-  const showYear = period.year !== todayYear;
-  const periodLabel = showYear ? `${monthLabel} ${period.year}` : monthLabel;
-  // The vs-comparison crosses a year boundary when prev's year differs
-  // from the current period's year (i.e. period is January). Show the
-  // year then so "vs December" can never mean an ambiguous December.
-  const prevLabel =
-    prevPeriod.year === period.year
+  const isYear = period === "year";
+  const total = isYear ? yearView.total : monthView.total;
+  const avg = isYear ? yearView.averageSpending : monthView.averageSpending;
+  const avgSuffix = isYear ? "per month" : "per day";
+  const hasChange = isYear ? yearView.hasChange : monthView.hasChange;
+  const isIncrease = isYear ? yearView.isIncrease : monthView.isIncrease;
+  const pctChange = isYear
+    ? yearView.percentageChange
+    : monthView.percentageChange;
+
+  const prevMonthName = MONTH_NAMES[(monthView.prevMonth - 1 + 12) % 12] ?? "";
+  const monthPrevLabel =
+    monthView.prevYear === cursor.year
       ? prevMonthName
-      : `${prevMonthName} ${prevPeriod.year}`;
+      : `${prevMonthName} ${monthView.prevYear}`;
+  const prevLabel = isYear ? String(yearView.prevYear) : monthPrevLabel;
 
-  const goPrev = () => setPeriod(prevPeriod);
-  const goNext = () => {
-    if (isCurrent) return;
-    setPeriod(nextPeriod);
+  const monthName = MONTH_NAMES[cursor.month - 1] ?? "";
+  const periodLabel = isYear
+    ? String(cursor.year)
+    : cursor.year === today.getFullYear()
+      ? monthName
+      : `${monthName} ${cursor.year}`;
+
+  // Prev always allowed; next clamped at the present via absolute month index.
+  const canPrev = true;
+  const todayAbs = today.getFullYear() * 12 + today.getMonth();
+  const cursorAbs = cursor.year * 12 + (cursor.month - 1);
+  const canNext = isYear ? cursor.year < today.getFullYear() : cursorAbs < todayAbs;
+
+  const step = (dir: -1 | 1) => {
+    if (dir > 0 && !canNext) return;
+    if (isYear) {
+      setCursor((c) => ({ ...c, year: c.year + dir }));
+    } else {
+      setCursor((c) => {
+        const abs = c.year * 12 + (c.month - 1) + dir;
+        return { year: Math.floor(abs / 12), month: (abs % 12) + 1 };
+      });
+    }
+  };
+
+  const jumpToMonth = (monthIndex0: number) => {
+    setCursor((c) => ({ year: c.year, month: monthIndex0 + 1 }));
+    setPeriod("month");
+  };
+
+  const toCat = (c: CategoryBreakdown): TreemapCat => {
+    const cat = lookup.byLabel(c.category) ?? lookup.fallback;
+    return {
+      // Raw string is unique per list; resolved slug can collapse onto "other".
+      id: c.category,
+      slug: cat.slug,
+      label: cat.label,
+      amount: c.total,
+      pct: c.percentage / 100,
+      color: cat.color,
+      icon: cat.icon,
+    };
+  };
+  const monthCats = monthView.categories.map(toCat);
+  const yearCats = yearView.categories.map(toCat);
+
+  const openCategory = (slug: string) => {
+    if (isYear) {
+      navigate(`/insights/category/${slug}?year=${cursor.year}&view=year`);
+    } else {
+      navigate(
+        `/insights/category/${slug}?year=${cursor.year}&month=${cursor.month}&view=month`,
+      );
+    }
   };
 
   return (
@@ -113,329 +262,115 @@ export function Insights() {
           padding: "calc(12px + env(safe-area-inset-top)) 16px 16px",
         }}
       >
-        <div
+        <h1
           style={{
-            padding: "6px 6px 14px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
+            fontSize: 26,
+            fontWeight: 600,
+            margin: "0 0 16px",
+            letterSpacing: "-0.02em",
           }}
         >
-          <h1
-            style={{
-              fontSize: 28,
-              fontWeight: 600,
-              margin: 0,
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Insights
-          </h1>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              background: t.card,
-              padding: "6px 8px",
-              borderRadius: 999,
-              fontSize: 12,
-              fontWeight: 500,
-            }}
-          >
-            <button
-              type="button"
-              onClick={goPrev}
-              aria-label="Previous month"
-              style={{
-                background: "transparent",
-                border: "none",
-                color: t.ink,
-                cursor: "pointer",
-                padding: "2px 6px",
-                fontSize: 14,
-                lineHeight: 1,
-              }}
-            >
-              ‹
-            </button>
-            <span>{periodLabel}</span>
-            <button
-              type="button"
-              onClick={goNext}
-              disabled={isCurrent}
-              aria-label="Next month"
-              style={{
-                background: "transparent",
-                border: "none",
-                color: isCurrent ? t.ink2 : t.ink,
-                opacity: isCurrent ? 0.4 : 1,
-                cursor: isCurrent ? "default" : "pointer",
-                padding: "2px 6px",
-                fontSize: 14,
-                lineHeight: 1,
-              }}
-            >
-              ›
-            </button>
-          </div>
-        </div>
+          Insights
+        </h1>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <div
-            style={{
-              background: t.card,
-              borderRadius: 22,
-              padding: "18px 16px 16px",
-            }}
-          >
-            <div style={{ fontSize: 11, color: t.ink2, fontWeight: 500 }}>
-              Spent · {periodLabel}
-            </div>
+        {/* Controls — sliding pills + airy period navigator */}
+        <div style={{ display: "flex", gap: 8 }}>
+          <Segmented<Person>
+            value={person}
+            onChange={setPerson}
+            options={[
+              { value: "mine", label: "Mine" },
+              { value: "all", label: "All" },
+            ]}
+          />
+          <Segmented<Period>
+            value={period}
+            onChange={setPeriod}
+            options={[
+              { value: "month", label: "Month" },
+              { value: "year", label: "Year" },
+            ]}
+          />
+        </div>
+        <PeriodNav
+          label={periodLabel}
+          canPrev={canPrev}
+          canNext={canNext}
+          onStep={step}
+        />
+
+        {/* Hero — total + average + delta pill */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            justifyContent: "space-between",
+            padding: "16px 4px 16px",
+          }}
+        >
+          <div>
             <div
+              data-testid="insights-total"
               style={{
-                fontSize: 28,
-                fontWeight: 600,
-                letterSpacing: "-0.02em",
-                marginTop: 4,
+                fontSize: 40,
+                fontWeight: 700,
+                letterSpacing: "-0.03em",
+                lineHeight: 1,
               }}
             >
               {fmtEUR(total, { cents: false })}
             </div>
-            {data?.hasChange ? (
-              <div style={{ fontSize: 12, color: t.ink2, marginTop: 4 }}>
-                {data.isIncrease ? "↑" : "↓"}{" "}
-                {Math.abs(data.percentageChange).toFixed(0)}% vs {prevLabel}
-              </div>
-            ) : null}
-          </div>
-          <div
-            style={{
-              background: t.card,
-              borderRadius: 22,
-              padding: "18px 16px 16px",
-            }}
-          >
-            <div style={{ fontSize: 11, color: t.ink2, fontWeight: 500 }}>
-              {avgLabel}
+            <div style={{ fontSize: 12, color: t.ink2, marginTop: 6 }}>
+              {fmtEUR(avg, { cents: false })} {avgSuffix}
             </div>
+          </div>
+          {hasChange ? (
             <div
               style={{
-                fontSize: 28,
+                fontSize: 12,
                 fontWeight: 600,
-                letterSpacing: "-0.02em",
-                marginTop: 4,
+                padding: "5px 10px",
+                borderRadius: 999,
+                background: isIncrease ? "#F0DEDA" : "#E0EAE4",
+                color: isIncrease ? t.red : t.green,
               }}
             >
-              {fmtEUR(avgPerDay, { cents: false })}
+              {isIncrease ? "↑" : "↓"} {pctChange.toFixed(0)}% vs {prevLabel}
             </div>
-          </div>
+          ) : null}
         </div>
 
-        <div
-          style={{
-            background: t.card,
-            borderRadius: 22,
-            padding: "18px 18px 14px",
-            marginTop: 10,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 14,
-            }}
-          >
-            <span style={{ fontSize: 13, fontWeight: 500 }}>
-              Daily spending
-            </span>
-            {isCurrent ? (
-              <span style={{ fontSize: 11, color: t.ink2 }}>
-                Day {todayDay} / {chart.length || 31}
-              </span>
-            ) : null}
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-end",
-              gap: 3,
-              height: 96,
-            }}
-          >
-            {chart.map((point, i) => {
-              const dayNum = i + 1;
-              const isFuture = isCurrent && dayNum > todayDay;
-              const v = point.value;
-              const h = maxValue ? Math.max(3, (v / maxValue) * 100) : 3;
-              const isToday = isCurrent && dayNum === todayDay;
-              return (
-                <div
-                  key={i}
-                  style={{
-                    flex: 1,
-                    height: isFuture ? 3 : `${h}%`,
-                    borderRadius: 4,
-                    background: isFuture
-                      ? t.rule
-                      : isToday
-                        ? t.accent
-                        : t.barOther,
-                  }}
-                />
-              );
-            })}
-          </div>
-        </div>
-
-        <div style={{ marginTop: 16 }}>
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 500,
-              padding: "4px 6px 10px",
-            }}
-          >
-            By category
-          </div>
-          {cats.length === 0 ? (
-            <div
-              style={{
-                background: t.card,
-                borderRadius: 22,
-                padding: "20px 16px",
-                textAlign: "center",
-                color: t.ink2,
-                fontSize: 13,
-              }}
-            >
-              No spending in this period.
+        {/* Period-aware main visual */}
+        {isYear ? (
+          <>
+            <MonthlyBars
+              series={yearView.series}
+              elapsed={yearView.elapsedMonths}
+              onMonth={jumpToMonth}
+            />
+            <div style={{ fontSize: 13, fontWeight: 500, padding: "20px 4px 10px" }}>
+              On what
             </div>
-          ) : (
-            <div
-              style={{
-                background: t.card,
-                borderRadius: 22,
-                overflow: "hidden",
-              }}
-            >
-              {cats.map((c, i) => {
-                const cat = lookup.byLabel(c.category) ?? lookup.fallback;
-                const tone = cat.color;
-                return (
-                  <button
-                    key={c.category}
-                    type="button"
-                    data-testid={`category-row-${cat.slug}`}
-                    onClick={() =>
-                      navigate(
-                        `/insights/category/${cat.slug}?year=${period.year}&month=${period.month}`,
-                      )
-                    }
-                    style={{
-                      width: "100%",
-                      textAlign: "left",
-                      cursor: "pointer",
-                      background: "transparent",
-                      border: "none",
-                      fontFamily: FONT,
-                      color: t.ink,
-                      padding: "14px 16px",
-                      borderTop: i === 0 ? "none" : `1px solid ${t.rule}`,
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <div
-                        style={{
-                          width: 38,
-                          height: 38,
-                          borderRadius: 12,
-                          background: tone.bg,
-                          color: tone.ink,
-                          display: "grid",
-                          placeItems: "center",
-                          flex: "0 0 auto",
-                        }}
-                      >
-                        <CategoryGlyph icon={cat.icon} size={18} />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "baseline",
-                          }}
-                        >
-                          <span style={{ fontSize: 14, fontWeight: 500 }}>
-                            {c.category}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: 14,
-                              fontWeight: 600,
-                              fontVariantNumeric: "tabular-nums",
-                            }}
-                          >
-                            €{c.total.toFixed(2)}
-                          </span>
-                        </div>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            marginTop: 4,
-                            fontSize: 11,
-                            color: t.ink2,
-                          }}
-                        >
-                          <span>
-                            {c.count}{" "}
-                            {c.count === 1 ? "transaction" : "transactions"}
-                          </span>
-                          <span>{c.percentage.toFixed(1)}%</span>
-                        </div>
-                        <div
-                          style={{
-                            marginTop: 8,
-                            height: 6,
-                            borderRadius: 3,
-                            background: t.bg,
-                            overflow: "hidden",
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: `${c.percentage}%`,
-                              height: "100%",
-                              background: tone.ink,
-                              opacity: 0.85,
-                            }}
-                          />
-                        </div>
-                      </div>
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke={t.ink2}
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        style={{ flex: "0 0 auto", marginLeft: 4 }}
-                      >
-                        <path d="M9 6l6 6-6 6" />
-                      </svg>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+            {yearCats.length ? (
+              <YearCategoryRows cats={yearCats} onSelect={openCategory} />
+            ) : (
+              <div
+                style={{
+                  background: t.card,
+                  borderRadius: 22,
+                  padding: "20px 16px",
+                  textAlign: "center",
+                  color: t.ink2,
+                  fontSize: 13,
+                }}
+              >
+                No spending in this period.
+              </div>
+            )}
+          </>
+        ) : (
+          <Treemap cats={monthCats} onSelect={openCategory} />
+        )}
       </div>
       <TabBar
         current="insights"

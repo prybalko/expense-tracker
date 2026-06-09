@@ -79,6 +79,21 @@ export type Insights = {
   nextMonth: number;
 };
 
+// Year-scoped counterpart to Insights for the "Year" view.
+export type YearInsights = {
+  year: number;
+  total: number;
+  averageSpending: number; // per elapsed month
+  series: number[]; // 12 monthly totals, index 0 = January
+  elapsedMonths: number; // 12 for a past year, current-month count for this year
+  categories: CategoryBreakdown[];
+  percentageChange: number;
+  isIncrease: boolean;
+  hasChange: boolean;
+  isCurrentYear: boolean;
+  prevYear: number;
+};
+
 export type CreateExpenseInput = {
   amount: number;
   description: string;

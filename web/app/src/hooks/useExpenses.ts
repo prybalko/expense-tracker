@@ -23,7 +23,7 @@ import type {
   UpdateExpenseInput,
   User,
 } from "../types";
-import { deriveInsights, expensesForCategory } from "../insights/derive";
+import { deriveInsights } from "../insights/derive";
 
 // Single canonical cache for every read in the app. Feed shows a windowed
 // slice of this array; Insights and CategoryDetails derive their views via
@@ -192,7 +192,7 @@ export function useInsightsFor(
 // are computed in the same pass.
 export function useCategoryView(
   year: number,
-  month: number,
+  month: number | null,
   label: string,
 ): {
   items: Expense[];
@@ -205,20 +205,21 @@ export function useCategoryView(
   const query = useAllExpenses();
   const view = useMemo(() => {
     const all = query.data ?? [];
-    const items = expensesForCategory(all, year, month, label);
+    // Single month, or the whole year when `month` is null.
+    const inScope = (iso: string): boolean => {
+      if (!iso || iso.length < 10) return false;
+      if (parseInt(iso.slice(0, 4), 10) !== year) return false;
+      if (month != null && parseInt(iso.slice(5, 7), 10) !== month) {
+        return false;
+      }
+      return true;
+    };
+    const items = all.filter((e) => e.category === label && inScope(e.date));
     let total = 0;
     for (const e of items) total += e.amount;
     let monthTotal = 0;
     for (const e of all) {
-      const ymd = e.date;
-      if (
-        ymd &&
-        ymd.length >= 10 &&
-        parseInt(ymd.slice(0, 4), 10) === year &&
-        parseInt(ymd.slice(5, 7), 10) === month
-      ) {
-        monthTotal += e.amount;
-      }
+      if (inScope(e.date)) monthTotal += e.amount;
     }
     const pct = monthTotal > 0 ? (total / monthTotal) * 100 : 0;
     return { items, total, count: items.length, monthTotal, pct };

@@ -45,6 +45,9 @@ export function CategoryDetails() {
       ? monthParam
       : today.getMonth() + 1;
 
+  // `view=year` → whole-year breakdown instead of a single month.
+  const isYearScope = searchParams.get("view") === "year";
+
   const lookup = useCategoryLookup();
   const cat = lookup.bySlug(slug) ?? lookup.fallback;
   const tone = cat.color;
@@ -52,7 +55,7 @@ export function CategoryDetails() {
   // One selector returns all four header numbers in a single useMemo over
   // the same array, so `pct = total / monthTotal * 100` can never flicker
   // (no longer two independent queries resolving at different times).
-  const view = useCategoryView(year, month, cat.label);
+  const view = useCategoryView(year, isYearScope ? null : month, cat.label);
   const { items, total, count, pct, isLoading } = view;
 
   const grouped = useMemo(() => groupByDay(items), [items]);
@@ -60,18 +63,25 @@ export function CategoryDetails() {
 
   // Without the year, the screen says "spent this month" while showing
   // 2024 data — actively misleading once the user can navigate years.
-  const isCurrentMonth =
-    year === today.getFullYear() && month === today.getMonth() + 1;
+  const isCurrentYear = year === today.getFullYear();
+  const isCurrentMonth = isCurrentYear && month === today.getMonth() + 1;
   const monthName = MONTH_NAMES[month - 1] ?? "";
-  const spentLabel = isCurrentMonth
-    ? "spent this month"
-    : year === today.getFullYear()
-      ? `spent in ${monthName}`
-      : `spent in ${monthName} ${year}`;
+  const spentLabel = isYearScope
+    ? isCurrentYear
+      ? "spent this year"
+      : `spent in ${year}`
+    : isCurrentMonth
+      ? "spent this month"
+      : isCurrentYear
+        ? `spent in ${monthName}`
+        : `spent in ${monthName} ${year}`;
 
   const goBack = () => {
     const params = new URLSearchParams();
-    if (year !== today.getFullYear() || month !== today.getMonth() + 1) {
+    if (isYearScope) {
+      params.set("year", String(year));
+      params.set("view", "year");
+    } else if (year !== today.getFullYear() || month !== today.getMonth() + 1) {
       params.set("year", String(year));
       params.set("month", String(month));
     }

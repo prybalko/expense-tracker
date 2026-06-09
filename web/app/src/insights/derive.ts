@@ -12,6 +12,7 @@ import type {
   ChartPoint,
   Expense,
   Insights,
+  YearInsights,
 } from "../types";
 
 const MONTH_NAMES = [
@@ -204,5 +205,92 @@ export function deriveInsights(
     prevMonth,
     nextYear,
     nextMonth,
+  };
+}
+
+function sumForYear(expenses: Expense[], year: number): number {
+  let sum = 0;
+  for (const e of expenses) {
+    const ymd = parseYMD(e.date);
+    if (ymd && ymd.year === year) sum += e.amount;
+  }
+  return sum;
+}
+
+function sumForYearUpToMonth(
+  expenses: Expense[],
+  year: number,
+  upToMonthInclusive: number,
+): number {
+  let sum = 0;
+  for (const e of expenses) {
+    const ymd = parseYMD(e.date);
+    if (!ymd || ymd.year !== year) continue;
+    if (ymd.month > upToMonthInclusive) continue;
+    sum += e.amount;
+  }
+  return sum;
+}
+
+// Year-scoped sibling of deriveInsights: 12-month series, totals, per-month
+// average, and a YoY delta span-matched to the elapsed part of the year.
+export function deriveYearInsights(
+  expenses: Expense[],
+  year: number,
+  now: Date,
+): YearInsights {
+  const isCurrentYear = year === now.getFullYear();
+  const elapsedMonths = isCurrentYear ? now.getMonth() + 1 : 12;
+
+  const series = new Array<number>(12).fill(0);
+  const categoryTotals = new Map<string, { total: number; count: number }>();
+  let total = 0;
+  for (const e of expenses) {
+    const ymd = parseYMD(e.date);
+    if (!ymd || ymd.year !== year) continue;
+    total += e.amount;
+    if (ymd.month >= 1 && ymd.month <= 12) series[ymd.month - 1] += e.amount;
+    const existing = categoryTotals.get(e.category);
+    if (existing) {
+      existing.total += e.amount;
+      existing.count += 1;
+    } else {
+      categoryTotals.set(e.category, { total: e.amount, count: 1 });
+    }
+  }
+
+  const prevYear = year - 1;
+  // Current year: day-clamp the trailing in-progress month on both sides so it
+  // can't drag the YoY delta down. Past year: full vs full.
+  const todayDay = now.getDate();
+  const prevTotal = isCurrentYear
+    ? sumForYearUpToMonth(expenses, prevYear, elapsedMonths - 1) +
+      sumForMonthUpToDay(expenses, prevYear, elapsedMonths, todayDay)
+    : sumForYear(expenses, prevYear);
+  const { pct, isIncrease, hasChange } = percentChange(total, prevTotal);
+
+  const averageSpending = elapsedMonths > 0 ? total / elapsedMonths : 0;
+
+  const categories: CategoryBreakdown[] = Array.from(categoryTotals.entries())
+    .map(([category, { total: catTotal, count }]) => ({
+      category,
+      total: catTotal,
+      count,
+      percentage: total > 0 ? (catTotal / total) * 100 : 0,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  return {
+    year,
+    total,
+    averageSpending,
+    series,
+    elapsedMonths,
+    categories,
+    percentageChange: pct,
+    isIncrease,
+    hasChange,
+    isCurrentYear,
+    prevYear,
   };
 }
