@@ -6,3 +6,11 @@ README.md
 docker-compose.yml
 *.db
 *.sqlite
+
+# Frontend build artifacts and deps — produced inside the web-builder stage.
+web/app/node_modules
+web/dist
+
+# Local data and tooling that shouldn't leak into the image.
+data
+e2e/node_modules

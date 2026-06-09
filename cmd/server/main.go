@@ -2,49 +2,22 @@ package main
 
 import (
 	"context"
-	"expense-tracker/internal/auth"
-	"expense-tracker/internal/handlers"
-	"expense-tracker/internal/storage"
+	"embed"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
+	"strings"
 	"syscall"
 	"time"
+
+	"expense-tracker/internal/api"
+	"expense-tracker/internal/auth"
+	"expense-tracker/internal/storage"
+	"expense-tracker/web"
 )
-
-func setupRouter(h *handlers.Handlers, staticDir string) *http.ServeMux {
-	mux := http.NewServeMux()
-
-	// Static files (public)
-	fs := http.FileServer(http.Dir(staticDir))
-	mux.Handle("GET /static/", http.StripPrefix("/static/", fs))
-
-	// Auth routes (public)
-	mux.HandleFunc("GET /login", h.LoginForm)
-	mux.HandleFunc("POST /login", h.Login)
-	mux.HandleFunc("GET /logout", h.Logout)
-
-	// Root redirect
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			http.Redirect(w, r, "/expenses", http.StatusFound)
-			return
-		}
-		http.NotFound(w, r)
-	})
-
-	// Protected routes (require authentication)
-	mux.Handle("GET /expenses", h.AuthMiddleware(http.HandlerFunc(h.ListExpenses)))
-	mux.Handle("GET /expenses/create", h.AuthMiddleware(http.HandlerFunc(h.CreateExpenseForm)))
-	mux.Handle("POST /expenses", h.AuthMiddleware(http.HandlerFunc(h.CreateExpense)))
-	mux.Handle("GET /expenses/{id}/edit", h.AuthMiddleware(http.HandlerFunc(h.EditExpenseForm)))
-	mux.Handle("POST /expenses/{id}", h.AuthMiddleware(http.HandlerFunc(h.UpdateExpense)))
-	mux.Handle("DELETE /expenses/{id}", h.AuthMiddleware(http.HandlerFunc(h.DeleteExpense)))
-	mux.Handle("GET /statistics", h.AuthMiddleware(http.HandlerFunc(h.Statistics)))
-
-	return mux
-}
 
 // bootstrapUser creates a default user if none exist and credentials are provided via env vars.
 func bootstrapUser(db *storage.DB) {
@@ -62,7 +35,6 @@ func bootstrapUser(db *storage.DB) {
 	password := os.Getenv("ADMIN_PASSWORD")
 
 	if username == "" || password == "" {
-		// Generate default admin with random password
 		username = "admin"
 		var err error
 		password, err = auth.GenerateRandomPassword()
@@ -87,10 +59,75 @@ func bootstrapUser(db *storage.DB) {
 		return
 	}
 
-	log.Printf("Created admin user: %s", username)
+	//nolint:gosec // Log injection mitigated by quoting
+	log.Printf("Created admin user: %q", username)
+}
+
+// newSPAHandler returns a handler that serves files from the embedded
+// dist FS. Requests for paths that don't match an embedded file fall
+// back to index.html so the React Router can take over on the client.
+func newSPAHandler(distFS embed.FS) (http.Handler, error) {
+	sub, err := fs.Sub(distFS, "dist")
+	if err != nil {
+		return nil, err
+	}
+
+	indexBytes, err := fs.ReadFile(sub, "index.html")
+	if err != nil {
+		return nil, err
+	}
+
+	fileServer := http.FileServer(http.FS(sub))
+
+	serveIndex := func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(indexBytes)
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		urlPath := strings.TrimPrefix(r.URL.Path, "/")
+		if urlPath == "" {
+			serveIndex(w)
+			return
+		}
+
+		f, err := sub.Open(urlPath)
+		if err == nil {
+			_ = f.Close()
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// Only fall back to index.html for navigation-style requests so that
+		// missing hashed assets (e.g. /assets/index-abc.js after a deploy)
+		// return a real 404 rather than HTML masquerading as JavaScript.
+		if isNavigationRequest(r, urlPath) {
+			serveIndex(w)
+			return
+		}
+		http.NotFound(w, r)
+	}), nil
+}
+
+func isNavigationRequest(r *http.Request, urlPath string) bool {
+	if ext := path.Ext(urlPath); ext != "" && ext != ".html" {
+		return false
+	}
+	accept := r.Header.Get("Accept")
+	if accept == "" {
+		return true
+	}
+	return strings.Contains(accept, "text/html") || strings.Contains(accept, "*/*")
 }
 
 func main() {
+	spaHandler, err := newSPAHandler(web.DistFS)
+	if err != nil {
+		log.Fatalf("Failed to initialize static handler: %v", err)
+	}
+
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
 		dbPath = "expenses.db"
@@ -102,14 +139,15 @@ func main() {
 	}
 	defer db.Close()
 
-	// Create initial user if needed
 	bootstrapUser(db)
 
-	// Use secure cookies when running with HTTPS (production)
 	secureCookie := os.Getenv("SECURE_COOKIE") == "true"
 
-	h := handlers.NewHandlers(db, "web/templates", secureCookie)
-	mux := setupRouter(h, "web/static")
+	apiHandler := api.NewRouter(db, secureCookie)
+
+	mux := http.NewServeMux()
+	mux.Handle("/api/", apiHandler)
+	mux.Handle("/", spaHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -125,17 +163,16 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	// Channel to listen for errors coming from the listener.
 	serverErrors := make(chan error, 1)
 
 	go func() {
-		log.Printf("API server starting on %s", port)
+		//nolint:gosec // Log injection mitigated by quoting
+		log.Printf("Server starting on %q", port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErrors <- err
 		}
 	}()
 
-	// Channel to listen for interrupt or terminate signals
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
 
@@ -147,11 +184,9 @@ func main() {
 	case <-shutdown:
 		log.Println("Starting shutdown...")
 
-		// Create a context with a timeout for shutdown
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		// Attempt graceful shutdown
 		if err := srv.Shutdown(ctx); err != nil {
 			log.Printf("Could not stop server gracefully: %v", err)
 			if err = srv.Close(); err != nil {

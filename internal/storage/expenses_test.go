@@ -129,42 +129,268 @@ func (s *ExpenseTestSuite) TestListExpenses() {
 	}
 }
 
-func (s *ExpenseTestSuite) TestListExpensesCurrentMonth() {
-	now := time.Now()
-	currentMonth := time.Date(now.Year(), now.Month(), 15, 12, 0, 0, 0, now.Location())
-	lastMonth := time.Date(now.Year(), now.Month()-1, 15, 12, 0, 0, 0, now.Location())
-	twoMonthsAgo := time.Date(now.Year(), now.Month()-2, 15, 12, 0, 0, 0, now.Location())
-
-	// Create expenses in different months
-	testExpenses := []struct {
-		amount      float64
-		description string
-		category    string
-		date        time.Time
+// TestListExpensesAll covers the API's read path: every live row regardless
+// of owner, ordered by (date DESC, id DESC). The app is a shared-household
+// ledger, so the list query has no per-user filter — Alice and Bob each
+// see every row, including legacy NULL-owner historical rows.
+func (s *ExpenseTestSuite) TestListExpensesAll() {
+	jan := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
+	feb := time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC)
+	seed := []struct {
+		amount   float64
+		desc     string
+		category string
+		date     time.Time
+		user     int64
 	}{
-		{100.00, "Current Month 1", "food", currentMonth},
-		{150.00, "Current Month 2", "transport", currentMonth.Add(24 * time.Hour)},
-		{200.00, "Last Month", "food", lastMonth},
-		{300.00, "Two Months Ago", "utilities", twoMonthsAgo},
+		{10.00, "Bakery", "Groceries", jan, 1},
+		{25.00, "Supermarket", "Groceries", jan.Add(2 * time.Hour), 1},
+		{40.00, "Feb shop", "Groceries", feb, 1},
+		{99.00, "Other user row", "Groceries", jan, 2},
+	}
+	for _, e := range seed {
+		_, err := s.db.InsertExpense(e.amount, e.desc, e.category, e.date, e.user)
+		s.Require().NoError(err)
 	}
 
-	for _, exp := range testExpenses {
-		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date, 1)
-		s.Require().NoError(err, "failed to create expense: %s", exp.description)
-	}
-
-	// List expenses should return all expenses (no longer filtered by month)
-	expenses, err := s.db.ListExpenses(100, 0)
+	// Insert a pre-multi-user historical row directly (NULL user_id).
+	// InsertExpense always sets a user, so we go around it. updated_at is
+	// required post-delta-sync — scanExpenses reads it as a non-nullable
+	// field, and a NULL would also leave the legacy row invisible to the
+	// diff endpoint until something bumped it.
+	_, err := s.db.conn.Exec(
+		`INSERT INTO expenses (amount, description, category, date, user_id, updated_at)
+		 VALUES (?, ?, ?, ?, NULL, ?)`,
+		5.00, "Legacy coffee", "Eating Out",
+		time.Date(2018, 6, 15, 9, 0, 0, 0, time.UTC),
+		time.Date(2018, 6, 15, 9, 0, 0, 0, time.UTC),
+	)
 	s.Require().NoError(err)
-	s.Len(expenses, 4, "expected all expenses")
 
-	// Verify the expenses are ordered by date DESC
-	if s.Len(expenses, 4) {
-		s.Equal("Current Month 2", expenses[0].Description)
-		s.InDelta(150.00, expenses[0].Amount, 0.001)
-		s.Equal("Current Month 1", expenses[1].Description)
-		s.InDelta(100.00, expenses[1].Amount, 0.001)
+	got, err := s.db.ListExpensesAll()
+	s.Require().NoError(err)
+	s.Require().Len(got, 5, "expected every live row across both users plus the legacy NULL row")
+	// (date DESC, id DESC). The two Jan rows by user 1 sit on different
+	// timestamps (jan and jan+2h) so Supermarket (jan+2h) outranks both
+	// Bakery (jan, id=1) and the partner's Other-user row (jan, id=4),
+	// which itself outranks Bakery via the id tiebreak.
+	s.Equal("Feb shop", got[0].Description)
+	s.Equal("Supermarket", got[1].Description)
+	s.Equal("Other user row", got[2].Description)
+	s.Equal("Bakery", got[3].Description)
+	s.Equal("Legacy coffee", got[4].Description)
+	s.Nil(got[4].UserID, "legacy row should still be unowned")
+}
+
+// TestUpdatePreservesAuthor pins the invariant that any authenticated user
+// can edit any row but the original author (user_id) is never overwritten.
+// This matters in the shared-household model: when Alice tweaks Bob's row,
+// it stays Bob's row in the ledger — the audit trail of who entered each
+// expense survives every downstream edit.
+func (s *ExpenseTestSuite) TestUpdatePreservesAuthor() {
+	bob := int64(2)
+	created, err := s.db.InsertExpense(7.50, "Old lunch", "Eating Out",
+		time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC), bob)
+	s.Require().NoError(err)
+	s.Require().NotNil(created.UserID)
+	s.Equal(bob, *created.UserID, "fresh row should be owned by its creator")
+
+	// Alice (user 1) edits Bob's row. UpdateExpense takes no userID
+	// arg — visibility and mutation are global in the shared model.
+	created.Description = "Old lunch (recategorised by Alice)"
+	created.Category = "Groceries"
+	s.Require().NoError(s.db.UpdateExpense(created))
+
+	reread, err := s.db.GetExpense(created.ID)
+	s.Require().NoError(err)
+	s.Equal("Old lunch (recategorised by Alice)", reread.Description)
+	s.Equal("Groceries", reread.Category)
+	s.Require().NotNil(reread.UserID, "user_id must not be cleared on update")
+	s.Equal(bob, *reread.UserID, "author must remain Bob even after Alice's edit")
+
+	// And the same row remains visible+editable in both directions —
+	// Bob can still delete what was originally his even though Alice
+	// touched it last.
+	s.Require().NoError(s.db.DeleteExpense(created.ID))
+	_, err = s.db.GetExpense(created.ID)
+	s.ErrorContains(err, "no rows")
+}
+
+// TestLegacyNullOwnedRowsAreEditable keeps coverage on the NULL-owner path
+// that previously needed special handling. With the shared-household model
+// the rule is trivial — any row, NULL-owner or not, is reachable to every
+// authenticated user — but legacy rows are still the most likely real
+// production data, so we pin that they survive the read/update/delete cycle.
+func (s *ExpenseTestSuite) TestLegacyNullOwnedRowsAreEditable() {
+	res, err := s.db.conn.Exec(
+		`INSERT INTO expenses (amount, description, category, date, user_id, updated_at)
+		 VALUES (?, ?, ?, ?, NULL, ?)`,
+		7.50, "Old lunch", "Eating Out",
+		time.Date(2017, 4, 1, 12, 0, 0, 0, time.UTC),
+		time.Date(2017, 4, 1, 12, 0, 0, 0, time.UTC),
+	)
+	s.Require().NoError(err)
+	id, err := res.LastInsertId()
+	s.Require().NoError(err)
+
+	got, err := s.db.GetExpense(id)
+	s.Require().NoError(err)
+	s.Equal("Old lunch", got.Description)
+	s.Nil(got.UserID)
+
+	got.Description = "Old lunch (recategorised)"
+	got.Category = "Groceries"
+	s.Require().NoError(s.db.UpdateExpense(got))
+	reread, err := s.db.GetExpense(id)
+	s.Require().NoError(err)
+	s.Equal("Old lunch (recategorised)", reread.Description)
+	s.Equal("Groceries", reread.Category)
+	s.Nil(reread.UserID, "update must not silently stamp a user onto a NULL row")
+
+	s.Require().NoError(s.db.DeleteExpense(id))
+	_, err = s.db.GetExpense(id)
+	s.ErrorContains(err, "no rows")
+}
+
+// TestInsertBumpsUpdatedAt pins the invariant that InsertExpense always
+// returns a non-zero updated_at — the client's lastSyncAt depends on every
+// write emitting a monotonic cursor, so silently leaving this field zero
+// would let a freshly-created row disappear from the Feed diff until the
+// next full reload.
+func (s *ExpenseTestSuite) TestInsertBumpsUpdatedAt() {
+	before := time.Now().Add(-time.Second).UTC()
+	created, err := s.db.InsertExpense(12.50, "Coffee", "Eating Out", time.Now(), 1)
+	s.Require().NoError(err)
+	s.Require().NotNil(created)
+	s.False(created.UpdatedAt.IsZero(), "InsertExpense must set updated_at")
+	s.True(created.UpdatedAt.After(before), "updated_at should be wall-clock now()")
+}
+
+// TestUpdateBumpsUpdatedAt mirrors the insert invariant for edits — without
+// advancing updated_at, a PATCH would be invisible to the delta endpoint
+// and the Feed diff would miss the user's own change made in another tab.
+func (s *ExpenseTestSuite) TestUpdateBumpsUpdatedAt() {
+	created, err := s.db.InsertExpense(10, "Original", "Other", time.Now(), 1)
+	s.Require().NoError(err)
+	originalUpdated := created.UpdatedAt
+	time.Sleep(2 * time.Millisecond)
+	created.Description = "Edited"
+	s.Require().NoError(s.db.UpdateExpense(created))
+	s.True(created.UpdatedAt.After(originalUpdated),
+		"UpdateExpense must advance updated_at: %v not after %v",
+		created.UpdatedAt, originalUpdated)
+}
+
+// TestDeleteExpense_SoftDeletes covers the tombstone behavior end-to-end:
+// the row survives in the table with deleted_at set, GetExpense / ListAll
+// filter it out, and ListExpensesChangedSince reports the id in the
+// deletedIds bucket — that combination is what lets the PWA drop the row
+// from its React Query cache on the next Feed sync without a full reload.
+func (s *ExpenseTestSuite) TestDeleteExpense_SoftDeletes() {
+	created, err := s.db.InsertExpense(42, "Bye", "Other", time.Now(), 1)
+	s.Require().NoError(err)
+
+	// Baseline lastSyncAt for the delta query. time.Sleep so the
+	// deleted_at timestamp is strictly greater than `since`.
+	since := time.Now().UTC()
+	time.Sleep(2 * time.Millisecond)
+
+	s.Require().NoError(s.db.DeleteExpense(created.ID))
+
+	// Row no longer shows up in read paths.
+	_, err = s.db.GetExpense(created.ID)
+	s.Require().ErrorContains(err, "no rows")
+	all, err := s.db.ListExpensesAll()
+	s.Require().NoError(err)
+	s.Empty(all)
+
+	// But the changes endpoint reports the id in the deletion bucket.
+	upd, deletedIDs, err := s.db.ListExpensesChangedSince(since)
+	s.Require().NoError(err)
+	s.Empty(upd, "deleted rows must not also surface in the updated bucket")
+	s.Require().Len(deletedIDs, 1)
+	s.Equal(created.ID, deletedIDs[0])
+
+	// The raw row still exists — tombstone, not purge.
+	var count int
+	err = s.db.conn.QueryRow(
+		`SELECT COUNT(*) FROM expenses WHERE id = ? AND deleted_at IS NOT NULL`,
+		created.ID,
+	).Scan(&count)
+	s.Require().NoError(err)
+	s.Equal(1, count, "expected the row to remain as a tombstone")
+}
+
+// TestPartialUniqueIndexAllowsReuseAfterSoftDelete documents the index
+// change that had to ship alongside soft-delete: recording "coffee €4 on
+// Monday", deleting it, then recording it again must succeed. The old
+// non-partial unique index on (user_id, date, amount, description) would
+// reject the second insert as a duplicate and permanently block the user
+// from re-entering any expense they had ever deleted.
+func (s *ExpenseTestSuite) TestPartialUniqueIndexAllowsReuseAfterSoftDelete() {
+	date := time.Date(2026, 5, 1, 8, 0, 0, 0, time.UTC)
+	first, err := s.db.InsertExpense(4.50, "Coffee", "Eating Out", date, 1)
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.db.DeleteExpense(first.ID))
+
+	// Re-inserting the exact same tuple must succeed — the partial unique
+	// index excludes the tombstone.
+	second, err := s.db.InsertExpense(4.50, "Coffee", "Eating Out", date, 1)
+	s.Require().NoError(err, "second insert after tombstone should not collide")
+	s.NotEqual(first.ID, second.ID, "fresh row should get a new id")
+
+	// But a second identical live row still collides — the uniqueness
+	// guarantee holds for non-deleted rows.
+	_, err = s.db.InsertExpense(4.50, "Coffee", "Eating Out", date, 1)
+	s.ErrorIs(err, ErrDuplicateExpense)
+}
+
+// TestListExpensesChangedSince_InsertsAndUpdates checks both buckets of
+// the diff query: rows whose updated_at moved past `since` land in
+// `updated`, whether they're brand new or pre-existing edits. This is
+// what the client upserts into the React Query cache on every Feed mount.
+func (s *ExpenseTestSuite) TestListExpensesChangedSince_InsertsAndUpdates() {
+	// Row 1 created before the cutoff — should not appear in the diff.
+	old, err := s.db.InsertExpense(10, "Old", "Other", time.Now(), 1)
+	s.Require().NoError(err)
+
+	cutoff := time.Now().UTC()
+	time.Sleep(2 * time.Millisecond)
+
+	// Row 2 inserted after the cutoff — appears as a new entry.
+	fresh, err := s.db.InsertExpense(20, "Fresh", "Other", time.Now(), 1)
+	s.Require().NoError(err)
+
+	// Row 1 edited after the cutoff — now appears as an update.
+	old.Description = "Old edited"
+	s.Require().NoError(s.db.UpdateExpense(old))
+
+	upd, deletedIDs, err := s.db.ListExpensesChangedSince(cutoff)
+	s.Require().NoError(err)
+	s.Empty(deletedIDs)
+	s.Require().Len(upd, 2)
+
+	descs := map[string]bool{}
+	for _, e := range upd {
+		descs[e.Description] = true
 	}
+	s.True(descs["Fresh"], "expected the newly-inserted row")
+	s.True(descs["Old edited"], "expected the edited row with the new description")
+	_ = fresh
+}
+
+// TestListExpensesChangedSince_BoundaryIsStrict protects the cursor
+// semantics: comparing updated_at > since (not >=) means that passing
+// back the serverTime we just returned does not re-emit any row. If this
+// became >= the Feed would re-process the last-seen row on every sync.
+func (s *ExpenseTestSuite) TestListExpensesChangedSince_BoundaryIsStrict() {
+	created, err := s.db.InsertExpense(10, "Row", "Other", time.Now(), 1)
+	s.Require().NoError(err)
+	upd, deletedIDs, err := s.db.ListExpensesChangedSince(created.UpdatedAt)
+	s.Require().NoError(err)
+	s.Empty(upd, "passing back the exact updated_at must not re-emit the row")
+	s.Empty(deletedIDs)
 }
 
 func (s *ExpenseTestSuite) TestListExpensesPagination() {
@@ -189,234 +415,6 @@ func (s *ExpenseTestSuite) TestListExpensesPagination() {
 	expenses, err = s.db.ListExpenses(10, 10)
 	s.Require().NoError(err)
 	s.Empty(expenses, "expected 0 expenses with offset beyond data")
-}
-
-func (s *ExpenseTestSuite) TestGetExpensesByMonth() {
-	// Create expenses in different months
-	jan2026 := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
-	feb2026 := time.Date(2026, 2, 15, 12, 0, 0, 0, time.UTC)
-	dec2025 := time.Date(2025, 12, 15, 12, 0, 0, 0, time.UTC)
-
-	testExpenses := []struct {
-		amount      float64
-		description string
-		category    string
-		date        time.Time
-	}{
-		{100.00, "January Expense 1", "groceries", jan2026},
-		{150.00, "January Expense 2", "transport", jan2026.Add(24 * time.Hour)},
-		{200.00, "February Expense", "eating out", feb2026},
-		{300.00, "December Expense", "utilities", dec2025},
-	}
-
-	for _, exp := range testExpenses {
-		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date, 1)
-		s.Require().NoError(err, "failed to create expense: %s", exp.description)
-	}
-
-	// Test getting January 2026 expenses
-	janExpenses, err := s.db.GetExpensesByMonth(2026, 1)
-	s.Require().NoError(err)
-	s.Len(janExpenses, 2, "expected 2 expenses in January 2026")
-
-	// Verify expenses are ordered by date DESC
-	if s.Len(janExpenses, 2) {
-		s.Equal("January Expense 2", janExpenses[0].Description)
-		s.InDelta(150.00, janExpenses[0].Amount, 0.001)
-		s.Equal("January Expense 1", janExpenses[1].Description)
-		s.InDelta(100.00, janExpenses[1].Amount, 0.001)
-	}
-
-	// Test getting February 2026 expenses
-	febExpenses, err := s.db.GetExpensesByMonth(2026, 2)
-	s.Require().NoError(err)
-	s.Len(febExpenses, 1, "expected 1 expense in February 2026")
-	if s.Len(febExpenses, 1) {
-		s.Equal("February Expense", febExpenses[0].Description)
-		s.InDelta(200.00, febExpenses[0].Amount, 0.001)
-	}
-
-	// Test getting December 2025 expenses
-	decExpenses, err := s.db.GetExpensesByMonth(2025, 12)
-	s.Require().NoError(err)
-	s.Len(decExpenses, 1, "expected 1 expense in December 2025")
-	if s.Len(decExpenses, 1) {
-		s.Equal("December Expense", decExpenses[0].Description)
-		s.InDelta(300.00, decExpenses[0].Amount, 0.001)
-	}
-
-	// Test getting a month with no expenses
-	novExpenses, err := s.db.GetExpensesByMonth(2025, 11)
-	s.Require().NoError(err)
-	s.Empty(novExpenses, "expected 0 expenses in November 2025")
-}
-
-func (s *ExpenseTestSuite) TestGetCategoryTotalsByMonth() {
-	// Create expenses in different months and categories
-	jan2026 := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
-
-	testExpenses := []struct {
-		amount      float64
-		description string
-		category    string
-		date        time.Time
-	}{
-		{100.00, "Groceries 1", "groceries", jan2026},
-		{150.00, "Groceries 2", "groceries", jan2026.Add(time.Hour)},
-		{200.00, "Bus", "transport", jan2026.Add(2 * time.Hour)},
-		{50.00, "Taxi", "transport", jan2026.Add(3 * time.Hour)},
-		{75.00, "Restaurant", "eating out", jan2026.Add(4 * time.Hour)},
-		// February expenses (should not be included)
-		{300.00, "Feb Groceries", "groceries", time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)},
-	}
-
-	for _, exp := range testExpenses {
-		err := s.db.CreateExpense(exp.amount, exp.description, exp.category, exp.date, 1)
-		s.Require().NoError(err, "failed to create expense: %s", exp.description)
-	}
-
-	// Test getting category totals for January 2026
-	totals, err := s.db.GetCategoryTotalsByMonth(2026, 1)
-	s.Require().NoError(err)
-	s.Len(totals, 3, "expected 3 categories in January 2026")
-
-	// Build a map for easier verification (since groceries and transport have same total)
-	categoryMap := make(map[string]CategoryTotal)
-	for _, ct := range totals {
-		categoryMap[ct.Category] = ct
-	}
-
-	// Verify groceries: 100 + 150 = 250
-	s.Contains(categoryMap, "groceries")
-	s.InDelta(250.00, categoryMap["groceries"].Total, 0.001)
-	s.Equal(2, categoryMap["groceries"].Count)
-
-	// Verify transport: 200 + 50 = 250
-	s.Contains(categoryMap, "transport")
-	s.InDelta(250.00, categoryMap["transport"].Total, 0.001)
-	s.Equal(2, categoryMap["transport"].Count)
-
-	// Verify eating out: 75 (should be last since it has lowest total)
-	s.Contains(categoryMap, "eating out")
-	s.InDelta(75.00, categoryMap["eating out"].Total, 0.001)
-	s.Equal(1, categoryMap["eating out"].Count)
-
-	// The last item should be eating out (lowest total)
-	s.Equal("eating out", totals[2].Category)
-
-	// Test getting category totals for February 2026
-	febTotals, err := s.db.GetCategoryTotalsByMonth(2026, 2)
-	s.Require().NoError(err)
-	s.Len(febTotals, 1, "expected 1 category in February 2026")
-	if s.Len(febTotals, 1) {
-		s.Equal("groceries", febTotals[0].Category)
-		s.InDelta(300.00, febTotals[0].Total, 0.001)
-		s.Equal(1, febTotals[0].Count)
-	}
-
-	// Test getting category totals for a month with no expenses
-	novTotals, err := s.db.GetCategoryTotalsByMonth(2025, 11)
-	s.Require().NoError(err)
-	s.Empty(novTotals, "expected 0 categories in November 2025")
-}
-
-func (s *ExpenseTestSuite) TestGetCategoryTotalsByMonth_SingleCategory() {
-	// Test when all expenses are in one category
-	jan2026 := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
-
-	expenses := []struct {
-		amount float64
-		desc   string
-	}{
-		{10.00, "Coffee"},
-		{20.00, "Lunch"},
-		{30.00, "Dinner"},
-	}
-
-	for _, exp := range expenses {
-		err := s.db.CreateExpense(exp.amount, exp.desc, "eating out", jan2026.Add(time.Hour), 1)
-		jan2026 = jan2026.Add(time.Hour)
-		s.Require().NoError(err)
-	}
-
-	totals, err := s.db.GetCategoryTotalsByMonth(2026, 1)
-	s.Require().NoError(err)
-	s.Len(totals, 1, "expected 1 category")
-	if s.Len(totals, 1) {
-		s.Equal("eating out", totals[0].Category)
-		s.InDelta(60.00, totals[0].Total, 0.001)
-		s.Equal(3, totals[0].Count)
-	}
-}
-
-func (s *ExpenseTestSuite) TestGetExpensesByMonth_EdgeCases() {
-	// Test month boundaries
-	// Last day of January
-	jan31 := time.Date(2026, 1, 31, 23, 59, 59, 0, time.UTC)
-	// First day of February
-	feb1 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
-
-	err := s.db.CreateExpense(100.00, "End of January", "groceries", jan31, 1)
-	s.Require().NoError(err)
-	err = s.db.CreateExpense(200.00, "Start of February", "groceries", feb1, 1)
-	s.Require().NoError(err)
-
-	// Get January expenses
-	janExpenses, err := s.db.GetExpensesByMonth(2026, 1)
-	s.Require().NoError(err)
-	s.Len(janExpenses, 1, "expected 1 expense in January")
-	if s.Len(janExpenses, 1) {
-		s.Equal("End of January", janExpenses[0].Description)
-	}
-
-	// Get February expenses
-	febExpenses, err := s.db.GetExpensesByMonth(2026, 2)
-	s.Require().NoError(err)
-	s.Len(febExpenses, 1, "expected 1 expense in February")
-	if s.Len(febExpenses, 1) {
-		s.Equal("Start of February", febExpenses[0].Description)
-	}
-}
-
-func (s *ExpenseTestSuite) TestGetTotalForRange() {
-	testExpenses := []struct {
-		amount float64
-		date   time.Time
-	}{
-		{50.00, time.Date(2026, 2, 28, 12, 0, 0, 0, time.UTC)},
-		{100.00, time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)},
-		{200.00, time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)},
-		{400.00, time.Date(2026, 3, 31, 23, 59, 59, 0, time.UTC)},
-		{800.00, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)},
-	}
-	for _, exp := range testExpenses {
-		err := s.db.CreateExpense(exp.amount, "Test", "other", exp.date, 1)
-		s.Require().NoError(err)
-	}
-
-	// Full March range: [Mar 1, Apr 1) should include all three March rows (100+200+400=700).
-	total, err := s.db.GetTotalForRange(
-		time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
-		time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
-	)
-	s.Require().NoError(err)
-	s.InDelta(700.00, total, 0.001, "full March total")
-
-	// Start is inclusive, end is exclusive: [Mar 1, Mar 15) excludes Mar 15.
-	total, err = s.db.GetTotalForRange(
-		time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
-		time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
-	)
-	s.Require().NoError(err)
-	s.InDelta(100.00, total, 0.001, "start inclusive, end exclusive")
-
-	// Empty range returns 0, not an error.
-	total, err = s.db.GetTotalForRange(
-		time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
-		time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
-	)
-	s.Require().NoError(err)
-	s.InDelta(0.00, total, 0.001, "empty range")
 }
 
 // Test suite runner

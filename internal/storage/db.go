@@ -67,8 +67,30 @@ func (db *DB) migrate() error {
 	// Add last_activity column to sessions for rolling sessions
 	_, _ = db.conn.Exec(`ALTER TABLE sessions ADD COLUMN last_activity DATETIME DEFAULT CURRENT_TIMESTAMP`)
 
-	// Add unique constraint on date, amount, description for expenses
-	_, _ = db.conn.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS expenses_date_amount_description_uindex ON expenses (date, amount, description)`)
+	// Add updated_at / deleted_at for delta sync. The client stores a
+	// lastSyncAt marker and asks for everything with updated_at > it on
+	// Feed entry; deletes flip deleted_at instead of removing the row so
+	// the diff can report them as tombstones. Existing rows get a
+	// backfilled updated_at so the very first post-migration diff call
+	// doesn't blindly re-emit every historical row as "new".
+	_, _ = db.conn.Exec(`ALTER TABLE expenses ADD COLUMN updated_at DATETIME`)
+	_, _ = db.conn.Exec(`ALTER TABLE expenses ADD COLUMN deleted_at DATETIME`)
+	_, _ = db.conn.Exec(`UPDATE expenses SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL`)
+
+	// Partial unique index on (user_id, date, amount, description) that
+	// only covers live (non-tombstoned) rows. The non-partial variant from
+	// before soft-delete would prevent the user from legitimately recording
+	// an identical tuple after deleting the original — now that deletes
+	// don't remove the row, the index must scope itself to deleted_at IS
+	// NULL to match the new semantics.
+	_, _ = db.conn.Exec(`DROP INDEX IF EXISTS expenses_date_amount_description_uindex`)
+	_, _ = db.conn.Exec(`DROP INDEX IF EXISTS expenses_user_date_amount_description_uindex`)
+	_, _ = db.conn.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS expenses_user_date_amount_description_uindex ON expenses (user_id, date, amount, description) WHERE deleted_at IS NULL`)
+
+	// Secondary index on updated_at to keep the delta-sync query O(log n)
+	// on the pruned set. Without this the Feed diff scans the whole table.
+	_, _ = db.conn.Exec(`CREATE INDEX IF NOT EXISTS expenses_user_updated_at_idx ON expenses (user_id, updated_at)`)
+	_, _ = db.conn.Exec(`CREATE INDEX IF NOT EXISTS expenses_user_deleted_at_idx ON expenses (user_id, deleted_at) WHERE deleted_at IS NOT NULL`)
 	return nil
 }
 

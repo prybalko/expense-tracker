@@ -1,0 +1,106 @@
+:root {
+  color-scheme: light;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100dvh;
+  overflow: hidden;
+  background: #f4f1ea;
+}
+
+html,
+body {
+  overscroll-behavior: none;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+}
+
+@supports not (height: 100dvh) {
+  html,
+  body,
+  #root {
+    height: 100vh;
+  }
+}
+
+body {
+  font-family: "DM Sans", -apple-system, system-ui, sans-serif;
+  color: #1a1714;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+button:focus {
+  outline: none;
+}
+
+button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+button:active {
+  transform: scale(0.97);
+  transition: transform 0.08s;
+}
+
+input,
+textarea {
+  font-family: inherit;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.scroll-y,
+.scroll-x {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.scroll-y {
+  overflow-y: auto;
+}
+
+.scroll-x {
+  overflow-x: auto;
+}
+
+.scroll-y::-webkit-scrollbar,
+.scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+@media (min-width: 600px) {
+  body {
+    background: #ebe7dd;
+  }
+
+  #root {
+    max-width: 480px;
+    margin: 0 auto;
+    box-shadow:
+      0 0 0 1px rgba(26, 23, 20, 0.06),
+      0 18px 48px rgba(26, 23, 20, 0.08);
+  }
+}

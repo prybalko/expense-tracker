@@ -3,78 +3,61 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"strings"
 	"testing"
 
-	"expense-tracker/internal/handlers"
-	"expense-tracker/internal/storage"
+	"expense-tracker/web"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestSetupRouter(t *testing.T) {
-	// Setup dependencies
-	db, err := storage.NewDB(":memory:")
-	require.NoError(t, err, "failed to create database")
-	defer db.Close()
+func TestSPAHandler_ServesEmbeddedIndex(t *testing.T) {
+	h, err := newSPAHandler(web.DistFS)
+	require.NoError(t, err)
 
-	// Use relative paths for tests running in cmd/server
-	h := handlers.NewHandlers(db, "../../web/templates", false)
-
-	// Ensure template directory exists, otherwise skip handler initialization if it panics (handlers might check for templates)
-	if _, err := os.Stat("../../web/templates"); os.IsNotExist(err) {
-		t.Skip("Template directory not found, skipping router test")
-	}
-
-	// Create router - this triggers the panic if routing conflict exists
-	mux := setupRouter(h, "../../web/static")
-
-	// Verify routes
 	tests := []struct {
-		name       string
-		method     string
-		path       string
-		wantStatus int
-		allowAlt   []int // Alternative acceptable status codes
+		name string
+		path string
 	}{
-		{
-			name:       "Root redirects to /expenses",
-			method:     "GET",
-			path:       "/",
-			wantStatus: http.StatusFound,
-		},
-		{
-			name:       "Static file access",
-			method:     "GET",
-			path:       "/static/style.css",
-			wantStatus: http.StatusOK,
-			allowAlt:   []int{http.StatusNotFound}, // File might not exist in test env
-		},
-		{
-			name:       "List Expenses requires auth",
-			method:     "GET",
-			path:       "/expenses",
-			wantStatus: http.StatusFound, // Should redirect to login
-		},
+		{"root", "/"},
+		{"unknown deep path falls back to index", "/expenses/123"},
+		{"unknown sibling falls back to index", "/insights"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, http.NoBody)
+			req := httptest.NewRequest(http.MethodGet, tt.path, http.NoBody)
 			w := httptest.NewRecorder()
 
-			mux.ServeHTTP(w, req)
+			h.ServeHTTP(w, req)
 
-			// Check if status matches expected or any alternative
-			if len(tt.allowAlt) > 0 {
-				acceptableStatuses := append([]int{tt.wantStatus}, tt.allowAlt...)
-				assert.Contains(t, acceptableStatuses, w.Code,
-					"%s %s returned unexpected status", tt.method, tt.path)
-			} else {
-				assert.Equal(t, tt.wantStatus, w.Code,
-					"%s %s returned unexpected status", tt.method, tt.path)
-			}
+			assert.Equal(t, http.StatusOK, w.Code)
+			assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+			body := w.Body.String()
+			assert.True(t, strings.HasPrefix(strings.TrimSpace(body), "<!doctype html>"),
+				"expected SPA fallback to return HTML doc, got: %q", body)
+		})
+	}
+}
+
+func TestSPAHandler_MissingAssetReturns404(t *testing.T) {
+	h, err := newSPAHandler(web.DistFS)
+	require.NoError(t, err)
+
+	// Hashed-asset-style URLs that don't exist must NOT receive the index
+	// HTML — otherwise the browser tries to parse HTML as JavaScript/CSS.
+	cases := []string{
+		"/assets/index-abc12345.js",
+		"/assets/styles-deadbeef.css",
+	}
+	for _, p := range cases {
+		t.Run(p, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, p, http.NoBody)
+			req.Header.Set("Accept", "*/*")
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusNotFound, w.Code)
 		})
 	}
 }
