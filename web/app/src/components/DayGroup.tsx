@@ -21,7 +21,7 @@ export function DayGroup({ label, items, slugFor, onItemClick }: Props) {
           display: "flex",
           justifyContent: "space-between",
           padding: "4px 8px 8px",
-          fontSize: 11,
+          fontSize: 12,
           fontWeight: 600,
           letterSpacing: "0.04em",
           color: t.ink2,
