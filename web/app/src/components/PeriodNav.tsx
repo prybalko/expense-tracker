@@ -63,7 +63,7 @@ export function PeriodNav({ label, canPrev, canNext, onStep }: Props) {
       <Chev dir={-1} off={!canPrev} onStep={onStep} />
       <span
         data-testid="period-label"
-        style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.01em" }}
+        style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.01em" }}
       >
         {label}
       </span>

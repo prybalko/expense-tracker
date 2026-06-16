@@ -85,10 +85,10 @@ function YearCategoryRows({
                 alignItems: "baseline",
               }}
             >
-              <span style={{ fontSize: 14, fontWeight: 500 }}>{c.label}</span>
+              <span style={{ fontSize: 15, fontWeight: 500 }}>{c.label}</span>
               <span
                 style={{
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: 600,
                   fontVariantNumeric: "tabular-nums",
                 }}
@@ -264,7 +264,7 @@ export function Insights() {
       >
         <h1
           style={{
-            fontSize: 26,
+            fontSize: 28,
             fontWeight: 600,
             margin: "0 0 16px",
             letterSpacing: "-0.02em",
@@ -312,7 +312,7 @@ export function Insights() {
             <div
               data-testid="insights-total"
               style={{
-                fontSize: 40,
+                fontSize: 44,
                 fontWeight: 700,
                 letterSpacing: "-0.03em",
                 lineHeight: 1,
@@ -320,14 +320,14 @@ export function Insights() {
             >
               {fmtEUR(total, { cents: false })}
             </div>
-            <div style={{ fontSize: 12, color: t.ink2, marginTop: 6 }}>
+            <div style={{ fontSize: 13, color: t.ink2, marginTop: 6 }}>
               {fmtEUR(avg, { cents: false })} {avgSuffix}
             </div>
           </div>
           {hasChange ? (
             <div
               style={{
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: 600,
                 padding: "5px 10px",
                 borderRadius: 999,
@@ -348,7 +348,7 @@ export function Insights() {
               elapsed={yearView.elapsedMonths}
               onMonth={jumpToMonth}
             />
-            <div style={{ fontSize: 13, fontWeight: 500, padding: "20px 4px 10px" }}>
+            <div style={{ fontSize: 14, fontWeight: 500, padding: "20px 4px 10px" }}>
               On what
             </div>
             {yearCats.length ? (
@@ -361,7 +361,7 @@ export function Insights() {
                   padding: "20px 16px",
                   textAlign: "center",
                   color: t.ink2,
-                  fontSize: 13,
+                  fontSize: 14,
                 }}
               >
                 No spending in this period.

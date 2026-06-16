@@ -242,7 +242,7 @@ function FormBody({
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
         </button>
-        <span style={{ fontSize: 14, fontWeight: 500 }}>
+        <span style={{ fontSize: 16, fontWeight: 600 }}>
           {isEdit ? "Edit expense" : "New expense"}
         </span>
         {isEdit ? (

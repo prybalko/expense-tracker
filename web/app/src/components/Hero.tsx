@@ -41,7 +41,7 @@ export function Hero({
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          fontSize: 12,
+          fontSize: 13,
           color: t.ink2,
         }}
       >
@@ -53,7 +53,7 @@ export function Hero({
               color: deltaColor,
               padding: "4px 10px",
               borderRadius: 999,
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: 500,
             }}
           >
@@ -70,10 +70,10 @@ export function Hero({
           marginTop: 14,
         }}
       >
-        <span style={{ fontSize: 22, color: t.ink2, fontWeight: 500 }}>€</span>
+        <span style={{ fontSize: 24, color: t.ink2, fontWeight: 500 }}>€</span>
         <span
           style={{
-            fontSize: 56,
+            fontSize: 64,
             fontWeight: 600,
             letterSpacing: "-0.03em",
             lineHeight: 1,
@@ -81,13 +81,13 @@ export function Hero({
         >
           {int}
         </span>
-        <span style={{ fontSize: 24, color: t.ink2, fontWeight: 500 }}>
+        <span style={{ fontSize: 26, color: t.ink2, fontWeight: 500 }}>
           .{dec}
         </span>
       </div>
       <div
         data-testid="hero-label"
-        style={{ fontSize: 12, color: t.ink2, marginTop: 6 }}
+        style={{ fontSize: 13, color: t.ink2, marginTop: 6 }}
       >
         spent this month
       </div>

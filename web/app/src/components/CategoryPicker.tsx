@@ -62,7 +62,7 @@ export function CategoryPicker({ value, onChange, usageCounts = {} }: Props) {
     <div style={{ padding: "6px 0 4px", fontFamily: FONT }}>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 12,
           color: t.ink2,
           fontWeight: 500,
           letterSpacing: "0.04em",
@@ -110,6 +110,7 @@ export function CategoryPicker({ value, onChange, usageCounts = {} }: Props) {
                     flexDirection: "column",
                     alignItems: "center",
                     gap: 6,
+                    minWidth: 0,
                     padding: "12px 4px 10px",
                     borderRadius: 18,
                     background: sel ? tone.bg : t.card,
@@ -135,7 +136,18 @@ export function CategoryPicker({ value, onChange, usageCounts = {} }: Props) {
                   >
                     <CategoryGlyph icon={cat.icon} size={18} />
                   </div>
-                  <span style={{ fontSize: 11, fontWeight: 500 }}>
+                  <span
+                    title={cat.label}
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      width: "100%",
+                      textAlign: "center",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
                     {cat.label}
                   </span>
                 </button>

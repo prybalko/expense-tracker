@@ -128,7 +128,7 @@ export function Treemap({ cats, onSelect }: Props) {
               padding: "40px 20px",
               textAlign: "center",
               color: t.ink2,
-              fontSize: 13,
+              fontSize: 14,
             }}
           >
             No spending in this period.
@@ -175,7 +175,7 @@ export function Treemap({ cats, onSelect }: Props) {
                   <CategoryGlyph icon={r.icon} size={big ? 18 : 14} />
                 )}
                 {big && (
-                  <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.7 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.7 }}>
                     {Math.round(r.pct * 100)}%
                   </span>
                 )}
@@ -184,14 +184,14 @@ export function Treemap({ cats, onSelect }: Props) {
                 <div>
                   {big && (
                     <div
-                      style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.1 }}
+                      style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.1 }}
                     >
                       {r.label}
                     </div>
                   )}
                   <div
                     style={{
-                      fontSize: big ? 15 : 12,
+                      fontSize: big ? 16 : 13,
                       fontWeight: 700,
                       fontVariantNumeric: "tabular-nums",
                     }}
@@ -208,7 +208,7 @@ export function Treemap({ cats, onSelect }: Props) {
       {hasCats && (
         <div
           style={{
-            fontSize: 11,
+            fontSize: 12,
             color: t.ink2,
             textAlign: "center",
             padding: "12px 0 0",

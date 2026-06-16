@@ -55,7 +55,7 @@ function TabButton({ id, label, icon, current, onNavigate }: BtnProps) {
       >
         {icon}
       </div>
-      <span style={{ fontSize: 10, fontWeight: 500 }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 500 }}>{label}</span>
     </button>
   );
 }

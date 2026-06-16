@@ -29,8 +29,8 @@ export function MonthlyBars({ series, elapsed, onMonth }: Props) {
           marginBottom: 16,
         }}
       >
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Monthly spending</span>
-        <span style={{ fontSize: 11, color: t.ink2 }}>tap a month</span>
+        <span style={{ fontSize: 14, fontWeight: 500 }}>Monthly spending</span>
+        <span style={{ fontSize: 12, color: t.ink2 }}>tap a month</span>
       </div>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120 }}>
         {series.map((v, i) => {
@@ -79,7 +79,7 @@ export function MonthlyBars({ series, elapsed, onMonth }: Props) {
             style={{
               flex: 1,
               textAlign: "center",
-              fontSize: 10,
+              fontSize: 11,
               color: i < elapsed ? t.ink2 : t.rule,
               fontWeight: i === elapsed - 1 ? 700 : 400,
             }}

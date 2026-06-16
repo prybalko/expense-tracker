@@ -64,7 +64,7 @@ export function Segmented<T extends string>({
               cursor: "pointer",
               fontFamily: FONT,
               padding: "8px 6px",
-              fontSize: 13,
+              fontSize: 14,
               fontWeight: 600,
               color: sel ? t.accentText : t.ink2,
               transition: "color .2s ease",

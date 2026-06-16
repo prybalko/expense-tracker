@@ -65,13 +65,13 @@ export function ExpenseRow({ expense, slug, isFirst = false, onClick }: Props) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
           data-testid="expense-row-desc"
-          style={{ fontSize: 16, fontWeight: 500 }}
+          style={{ fontSize: 17, fontWeight: 500 }}
         >
           {expense.description || expense.category}
         </div>
         <div
           style={{
-            fontSize: 13,
+            fontSize: 14,
             color: t.ink2,
             marginTop: 2,
             display: "flex",
@@ -98,7 +98,7 @@ export function ExpenseRow({ expense, slug, isFirst = false, onClick }: Props) {
         <span
           data-testid="expense-row-amount"
           style={{
-            fontSize: 16,
+            fontSize: 17,
             fontWeight: 600,
             fontVariantNumeric: "tabular-nums",
           }}
