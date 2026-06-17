@@ -32,7 +32,7 @@ jobs:
     - name: Set up Node
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '22'
         cache: 'npm'
         cache-dependency-path: web/app/package-lock.json
 
@@ -43,6 +43,10 @@ jobs:
     - name: Typecheck frontend
       working-directory: web/app
       run: npx tsc --noEmit
+
+    - name: Test frontend
+      working-directory: web/app
+      run: npm run test
 
     - name: Build frontend
       working-directory: web/app
