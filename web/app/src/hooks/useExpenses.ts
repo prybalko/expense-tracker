@@ -177,12 +177,13 @@ export function useSyncExpenses(): SyncExpensesMutation {
 export function useInsightsFor(
   year: number,
   month: number,
+  today: Date,
 ): { data: Insights | undefined } {
   const query = useAllExpenses();
   const data = useMemo(() => {
     if (!query.data) return undefined;
-    return deriveInsights(query.data, year, month, new Date());
-  }, [query.data, year, month]);
+    return deriveInsights(query.data, year, month, today);
+  }, [query.data, year, month, today]);
   return { data };
 }
 

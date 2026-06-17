@@ -9,6 +9,7 @@ import { MonthlyBars } from "../components/MonthlyBars";
 import { Treemap, type TreemapCat } from "../components/Treemap";
 import { useAllExpenses, useCurrentUser } from "../hooks/useExpenses";
 import { useCategoryLookup } from "../hooks/useCategoryLookup";
+import { useToday } from "../hooks/useToday";
 import { deriveInsights, deriveYearInsights } from "../insights/derive";
 import { fmtEUR } from "../format";
 import type { CategoryBreakdown } from "../types";
@@ -125,7 +126,7 @@ export function Insights() {
   const t = theme;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const today = useMemo(() => new Date(), []);
+  const today = useToday();
   const lookup = useCategoryLookup();
 
   // Seed from the URL so CategoryDetails' back-arrow restores the period/view.

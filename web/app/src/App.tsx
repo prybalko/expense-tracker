@@ -9,6 +9,7 @@ import { Insights } from "./screens/Insights";
 import { CategoryDetails } from "./screens/CategoryDetails";
 import { EntryForm } from "./screens/EntryForm";
 import { ErrorBanner } from "./components/ErrorBanner";
+import { ResumeSync } from "./components/ResumeSync";
 import { ErrorBannerProvider } from "./hooks/useErrorBanner";
 
 const queryClient = new QueryClient({
@@ -24,6 +25,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ErrorBannerProvider>
+        <ResumeSync />
         <BrowserRouter>
           <ErrorBanner />
           <Routes>

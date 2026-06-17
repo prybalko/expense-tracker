@@ -6,6 +6,8 @@ import { CategoryPicker } from "../components/CategoryPicker";
 import { Keypad } from "../components/Keypad";
 import type { KeypadKey } from "../components/Keypad";
 import { DatePickerPill } from "../components/DatePickerPill";
+import { useToday } from "../hooks/useToday";
+import { resolveSubmitDate } from "./entryDate";
 import {
   useAllExpenses,
   useCreateExpense,
@@ -83,7 +85,15 @@ function FormBody({
   const [cat, setCat] = useState<string>(initialCategory);
   const [note, setNote] = useState<string>(initialNote);
   const [date, setDate] = useState<Date>(initialDate);
+  const [dateTouched, setDateTouched] = useState(false);
+  const today = useToday();
   const { showError, clear: clearBannerError } = useErrorBanner();
+
+  // The date the pill shows. For a brand-new expense the user hasn't dated
+  // yet, it tracks the live current day (useToday refreshes on resume), so a
+  // form left open across an iOS overnight freeze shows the real day rather
+  // than the day it was opened. An explicit pick or an edit shows `date`.
+  const displayedDate = resolveSubmitDate(isEdit, dateTouched, date, today);
 
   // Clear any lingering banner error as soon as the user starts editing
   // again — stale copy from the previous attempt should disappear rather
@@ -117,6 +127,7 @@ function FormBody({
 
   const onDateChange = (next: Date) => {
     clearBannerError();
+    setDateTouched(true);
     setDate(next);
   };
 
@@ -138,11 +149,15 @@ function FormBody({
     // time-of-day with "now" on every save (re-ordering the feed and
     // mutating the unique-index tuple even when the user only touched the
     // amount or note).
+    // Last-line guarantee: a new, untouched expense persists the real current
+    // day even if the resume effect hasn't flushed yet (returns `date`
+    // unchanged for edits and explicit picks).
+    const submitDate = resolveSubmitDate(isEdit, dateTouched, date, new Date());
     const preserveOriginal =
       isEdit && initialDateString !== null && sameCalendarDay(date, initialDate);
     const dateStr = preserveOriginal
       ? (initialDateString as string)
-      : toIsoDateTime(date);
+      : toIsoDateTime(submitDate);
     try {
       if (isEdit && editingId !== null) {
         await updateMutation.mutateAsync({
@@ -359,7 +374,12 @@ function FormBody({
             >
               Date
             </div>
-            <DatePickerPill value={date} onChange={onDateChange} bare />
+            <DatePickerPill
+              value={displayedDate}
+              onChange={onDateChange}
+              today={today}
+              bare
+            />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div

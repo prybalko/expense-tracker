@@ -158,15 +158,27 @@ export function usePullToRefresh(
   };
 }
 
-// useSyncOnVisible runs `callback` whenever the document becomes visible
-// again. This covers the iOS PWA "resume from background" case the pull
-// gesture can't reach: the user deletes an item on phone A, switches back
-// to the PWA on phone B that was sitting idle, and the diff fires
-// automatically as the page returns to the foreground. Same code path as
-// the gesture — wired to useSyncExpenses at the call site.
+// SYNC_BURST_MS is the window over which the cluster of events iOS fires on a
+// single resume (pageshow + focus + visibilitychange, often within the same
+// tick) collapses into one callback. Long enough to swallow the burst, short
+// enough to feel immediate.
+const SYNC_BURST_MS = 50;
+
+// useSyncOnVisible runs `callback` whenever the app returns to the foreground.
+// This covers the PWA "resume from background" case the pull gesture can't
+// reach: the user deletes an item on phone A, switches back to the PWA on
+// phone B that was sitting idle, and the diff fires automatically.
 //
-// The handler is stored in a ref so the listener never needs to be torn
-// down and re-installed on every parent render.
+// It listens to the full set of resume signals — not just `visibilitychange`,
+// which iOS does not fire on every wake path. `pageshow` covers bfcache
+// restores, `focus` covers app-switcher returns that only refocus the window,
+// and `online` re-fires the sync once connectivity is back after a wake with
+// no radio. The events are coalesced over SYNC_BURST_MS so a single resume
+// (which emits several of them at once) triggers exactly one callback.
+//
+// The handler is stored in a ref so the listener never needs to be torn down
+// and re-installed on every parent render. Mount this once at app level so
+// every route recovers on resume — not per screen.
 export function useSyncOnVisible(callback: () => void): void {
   const cbRef = useRef(callback);
   useEffect(() => {
@@ -174,14 +186,31 @@ export function useSyncOnVisible(callback: () => void): void {
   }, [callback]);
 
   useEffect(() => {
-    if (typeof document === "undefined") return;
-    const handler = () => {
-      if (document.visibilityState === "visible") {
+    if (typeof window === "undefined") return;
+    let burstTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const fire = () => {
+      if (burstTimer) return; // a call is already scheduled for this burst
+      burstTimer = setTimeout(() => {
+        burstTimer = undefined;
         cbRef.current();
-      }
+      }, SYNC_BURST_MS);
     };
-    document.addEventListener("visibilitychange", handler);
-    return () => document.removeEventListener("visibilitychange", handler);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fire();
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", fire);
+    window.addEventListener("focus", fire);
+    window.addEventListener("online", fire);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", fire);
+      window.removeEventListener("focus", fire);
+      window.removeEventListener("online", fire);
+      if (burstTimer) clearTimeout(burstTimer);
+    };
   }, []);
 }
 

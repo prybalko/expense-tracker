@@ -9,6 +9,7 @@ import { CategoryGlyph } from "../components/CategoryGlyph";
 import { DayGroup } from "../components/DayGroup";
 import { useCategoryLookup } from "../hooks/useCategoryLookup";
 import { useCategoryView } from "../hooks/useExpenses";
+import { useToday } from "../hooks/useToday";
 import { groupByDay, dayLabel } from "../groupByDay";
 import { splitInt } from "../format";
 
@@ -30,7 +31,7 @@ const MONTH_NAMES = [
 export function CategoryDetails() {
   const t = theme;
   const navigate = useNavigate();
-  const today = useMemo(() => new Date(), []);
+  const today = useToday();
   const { slug = "" } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
 

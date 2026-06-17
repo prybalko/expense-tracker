@@ -14,7 +14,8 @@ import { useCategoryLookup } from "../hooks/useCategoryLookup";
 import { useErrorBanner } from "../hooks/useErrorBanner";
 import { messageForReadError } from "../api/errors";
 import { dayLabel, groupByDay } from "../groupByDay";
-import { usePullToRefresh, useSyncOnVisible } from "../hooks/usePullToRefresh";
+import { usePullToRefresh } from "../hooks/usePullToRefresh";
+import { useToday } from "../hooks/useToday";
 import type { Expense } from "../types";
 
 const MONTH_NAMES = [
@@ -37,8 +38,8 @@ const PAGE = 50;
 export function Feed() {
   const t = theme;
   const navigate = useNavigate();
-  const today = useMemo(() => new Date(), []);
-  const insights = useInsightsFor(today.getFullYear(), today.getMonth() + 1);
+  const today = useToday();
+  const insights = useInsightsFor(today.getFullYear(), today.getMonth() + 1, today);
   const expenses = useAllExpenses();
   const sync = useSyncExpenses();
   const { showError } = useErrorBanner();
@@ -80,7 +81,8 @@ export function Feed() {
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pull = usePullToRefresh(scrollRef, triggerSync);
-  useSyncOnVisible(triggerSync);
+  // Resume-driven sync now lives app-wide in <ResumeSync/>; the Feed keeps
+  // only the manual pull gesture.
 
   // Surface cold-start fetch failures the same way. Without this the Feed
   // would quietly sit on an empty state and the user would have no signal
