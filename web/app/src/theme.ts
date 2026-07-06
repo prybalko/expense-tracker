@@ -18,7 +18,9 @@ export type Theme = {
   accentText: string;
   accentSoft: string;
   green: string;
+  greenSoft: string;
   red: string;
+  redSoft: string;
   barOther: string;
   keyDisabled: string;
 };
@@ -37,7 +39,9 @@ export const linen: Theme = {
   accentText: "#FBF9F4",
   accentSoft: "#E5E0D5",
   green: "oklch(0.55 0.10 150)",
+  greenSoft: "#E0EAE4",
   red: "oklch(0.55 0.18 22)",
+  redSoft: "#F2D7DA",
   barOther: "#C7BFB1",
   keyDisabled: "#CFC8BB",
 };

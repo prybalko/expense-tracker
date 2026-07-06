@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { theme, FONT } from "../theme";
 import { CalendarGrid } from "./CalendarGrid";
+import { SectionLabel } from "./SectionLabel";
 
 const sameYMD = (a: Date, b: Date): boolean =>
   a.getFullYear() === b.getFullYear() &&
@@ -238,18 +239,7 @@ export function DatePickerPill({
 
   return (
     <div style={{ padding: "6px 0 8px", fontFamily: FONT }}>
-      <div
-        style={{
-          fontSize: 11,
-          color: t.ink2,
-          fontWeight: 500,
-          letterSpacing: "0.04em",
-          textTransform: "uppercase",
-          padding: "0 18px 8px",
-        }}
-      >
-        Date
-      </div>
+      <SectionLabel style={{ padding: "0 18px 8px" }}>Date</SectionLabel>
       <div style={{ padding: "0 14px" }}>{button}</div>
       {sheet}
     </div>

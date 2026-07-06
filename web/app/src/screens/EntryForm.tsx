@@ -3,6 +3,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { theme, FONT } from "../theme";
 import { CategoryPicker } from "../components/CategoryPicker";
+import { IconButton } from "../components/IconButton";
+import { SectionLabel } from "../components/SectionLabel";
 import { Keypad } from "../components/Keypad";
 import type { KeypadKey } from "../components/Keypad";
 import { DatePickerPill } from "../components/DatePickerPill";
@@ -52,6 +54,54 @@ function sameCalendarDay(a: Date, b: Date): boolean {
     a.getFullYear() === b.getFullYear() &&
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
+  );
+}
+
+// Full-screen fallback for the edit route's loading / error / not-found
+// states; the "Go back" action is omitted while loading.
+function FullScreenNote({
+  message,
+  onClose,
+}: {
+  message: string;
+  onClose?: () => void;
+}) {
+  return (
+    <div
+      style={{
+        minHeight: "100dvh",
+        background: theme.bg,
+        color: theme.ink2,
+        fontFamily: FONT,
+        display: "grid",
+        placeItems: "center",
+        padding: 24,
+        textAlign: "center",
+        fontSize: 13,
+      }}
+    >
+      <div>
+        <div style={{ marginBottom: onClose ? 12 : 0 }}>{message}</div>
+        {onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: "10px 18px",
+              borderRadius: 999,
+              background: theme.card,
+              color: theme.ink,
+              border: "none",
+              fontSize: 13,
+              fontFamily: FONT,
+              cursor: "pointer",
+            }}
+          >
+            Go back
+          </button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -215,23 +265,7 @@ function FormBody({
           flexShrink: 0,
         }}
       >
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 18,
-            background: t.card,
-            border: "none",
-            color: t.ink,
-            cursor: "pointer",
-            display: "grid",
-            placeItems: "center",
-            padding: 0,
-          }}
-        >
+        <IconButton onClick={onClose} aria-label="Close">
           <svg
             width="20"
             height="20"
@@ -244,27 +278,16 @@ function FormBody({
           >
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
-        </button>
+        </IconButton>
         <span style={{ fontSize: 16, fontWeight: 600 }}>
           {isEdit ? "Edit expense" : "New expense"}
         </span>
         {isEdit ? (
-          <button
-            type="button"
+          <IconButton
             onClick={onDelete}
             aria-label="Delete"
             data-testid="entry-delete"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              background: t.card,
-              border: "none",
-              color: t.red,
-              cursor: "pointer",
-              display: "grid",
-              placeItems: "center",
-            }}
+            color={t.red}
           >
             <svg
               width="16"
@@ -278,7 +301,7 @@ function FormBody({
             >
               <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14M10 11v6M14 11v6" />
             </svg>
-          </button>
+          </IconButton>
         ) : (
           <div style={{ width: 36 }} />
         )}
@@ -294,17 +317,6 @@ function FormBody({
         }}
       >
         <div style={{ textAlign: "center", padding: "14px 0 14px", flexShrink: 0 }}>
-          {/*<div*/}
-          {/*  style={{*/}
-          {/*    fontSize: 11,*/}
-          {/*    color: t.ink2,*/}
-          {/*    fontWeight: 500,*/}
-          {/*    letterSpacing: "0.04em",*/}
-          {/*    textTransform: "uppercase",*/}
-          {/*  }}*/}
-          {/*>*/}
-          {/*  EUR*/}
-          {/*</div>*/}
           <div
             data-testid="entry-amount"
             data-amount={display}
@@ -354,18 +366,7 @@ function FormBody({
           }}
         >
           <div style={{ flex: "0 0 46%", minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: 11,
-                color: t.ink2,
-                fontWeight: 500,
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-                padding: "0 4px 8px",
-              }}
-            >
-              Date
-            </div>
+            <SectionLabel style={{ padding: "0 4px 8px" }}>Date</SectionLabel>
             <DatePickerPill
               value={displayedDate}
               onChange={onDateChange}
@@ -374,18 +375,7 @@ function FormBody({
             />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: 11,
-                color: t.ink2,
-                fontWeight: 500,
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-                padding: "0 4px 8px",
-              }}
-            >
-              Note
-            </div>
+            <SectionLabel style={{ padding: "0 4px 8px" }}>Note</SectionLabel>
             <input
               data-testid="entry-note"
               value={note}
@@ -503,96 +493,17 @@ export function EntryForm() {
   if (isEdit && !editing) {
     if (fetchFailed) {
       return (
-        <div
-          style={{
-            minHeight: "100vh",
-            background: theme.bg,
-            color: theme.ink2,
-            fontFamily: FONT,
-            display: "grid",
-            placeItems: "center",
-            padding: 24,
-            textAlign: "center",
-            fontSize: 13,
-          }}
-        >
-          <div>
-            <div style={{ marginBottom: 12 }}>
-              Couldn't load this expense.
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                padding: "10px 18px",
-                borderRadius: 999,
-                background: theme.card,
-                color: theme.ink,
-                border: "none",
-                fontSize: 13,
-                fontFamily: FONT,
-                cursor: "pointer",
-              }}
-            >
-              Go back
-            </button>
-          </div>
-        </div>
+        <FullScreenNote
+          message="Couldn't load this expense."
+          onClose={onClose}
+        />
       );
     }
     if (isFetchingFromServer) {
-      return (
-        <div
-          style={{
-            minHeight: "100vh",
-            background: theme.bg,
-            color: theme.ink2,
-            fontFamily: FONT,
-            display: "grid",
-            placeItems: "center",
-            fontSize: 13,
-          }}
-        >
-          Loading...
-        </div>
-      );
+      return <FullScreenNote message="Loading..." />;
     }
     // Edit ID resolves to no record — neither in cache nor fetched.
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: theme.bg,
-          color: theme.ink2,
-          fontFamily: FONT,
-          display: "grid",
-          placeItems: "center",
-          padding: 24,
-          textAlign: "center",
-          fontSize: 13,
-        }}
-      >
-        <div>
-          <div style={{ marginBottom: 12 }}>Expense not found.</div>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              padding: "10px 18px",
-              borderRadius: 999,
-              background: theme.card,
-              color: theme.ink,
-              border: "none",
-              fontSize: 13,
-              fontFamily: FONT,
-              cursor: "pointer",
-            }}
-          >
-            Go back
-          </button>
-        </div>
-      </div>
-    );
+    return <FullScreenNote message="Expense not found." onClose={onClose} />;
   }
 
   const initialAmt = editing ? amountToKeypadString(editing.amount) : "";

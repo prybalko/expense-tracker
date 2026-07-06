@@ -14,21 +14,7 @@ import type {
   Insights,
   YearInsights,
 } from "../types";
-
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
+import { MONTH_NAMES } from "../dates";
 
 type YMD = { year: number; month: number; day: number };
 

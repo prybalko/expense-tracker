@@ -523,6 +523,8 @@ func (s *E2ETestSuite) TestInsightsPeriodNavigation() {
 }
 
 // Mine/All toggle: single user owns everything, so Mine keeps it visible.
+// The scope must also survive the category-details round-trip via the
+// person=mine URL param.
 func (s *E2ETestSuite) TestInsightsMineAllFilter() {
 	s.login()
 	s.addExpense("15.00", "Coffee", "eating")
@@ -540,6 +542,21 @@ func (s *E2ETestSuite) TestInsightsMineAllFilter() {
 	s.Require().NoError(err, "Mine should be selected")
 	err = s.expect.Locator(s.page.Locator(tid("category-row-eating"))).ToBeVisible()
 	s.Require().NoError(err, "own expense should remain visible under Mine")
+
+	// Drill into the category and come back: Mine stays selected.
+	err = s.page.Locator(tid("category-row-eating")).Click()
+	s.Require().NoError(err, "failed to open eating category")
+	err = s.expect.Locator(s.page.Locator(tid("category-details"))).ToBeVisible()
+	s.Require().NoError(err, "category details not visible")
+	err = s.expect.Locator(s.page.Locator(tid("category-details-count"))).ToContainText("1 transaction")
+	s.Require().NoError(err, "expected 1 transaction in eating detail under Mine")
+
+	err = s.page.Locator(tid("category-details-back")).Click()
+	s.Require().NoError(err, "failed to go back from category details")
+	err = s.expect.Locator(s.page.Locator(tid("segment-mine"))).ToHaveAttribute("aria-pressed", "true")
+	s.Require().NoError(err, "Mine should survive the details round-trip")
+	err = s.expect.Locator(s.page.Locator(tid("category-row-eating"))).ToBeVisible()
+	s.Require().NoError(err, "eating tile should still be visible under Mine after back")
 }
 
 // TestFeedSyncPicksUpServerSideInserts documents the delta-sync contract:

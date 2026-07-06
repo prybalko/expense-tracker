@@ -7,27 +7,19 @@ import { Segmented } from "../components/Segmented";
 import { PeriodNav } from "../components/PeriodNav";
 import { MonthlyBars } from "../components/MonthlyBars";
 import { Treemap, type TreemapCat } from "../components/Treemap";
-import { useAllExpenses, useCurrentUser } from "../hooks/useExpenses";
+import { DeltaPill } from "../components/DeltaPill";
+import { StatusNote } from "../components/StatusNote";
+import {
+  isOwnExpense,
+  useAllExpenses,
+  useCurrentUser,
+} from "../hooks/useExpenses";
 import { useCategoryLookup } from "../hooks/useCategoryLookup";
 import { useToday } from "../hooks/useToday";
 import { deriveInsights, deriveYearInsights } from "../insights/derive";
 import { fmtEUR } from "../format";
+import { MONTH_NAMES } from "../dates";
 import type { CategoryBreakdown } from "../types";
-
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
 
 type Person = "all" | "mine";
 type Period = "month" | "year";
@@ -129,11 +121,14 @@ export function Insights() {
   const today = useToday();
   const lookup = useCategoryLookup();
 
-  // Seed from the URL so CategoryDetails' back-arrow restores the period/view.
+  // Seed from the URL so CategoryDetails' back-arrow restores the
+  // period/view/person selection.
   const [period, setPeriod] = useState<Period>(() =>
     searchParams.get("view") === "year" ? "year" : "month",
   );
-  const [person, setPerson] = useState<Person>("all");
+  const [person, setPerson] = useState<Person>(() =>
+    searchParams.get("person") === "mine" ? "mine" : "all",
+  );
   const [cursor, setCursor] = useState(() => {
     const y = parseInt(searchParams.get("year") ?? "", 10);
     const m = parseInt(searchParams.get("month") ?? "", 10);
@@ -152,13 +147,10 @@ export function Insights() {
   const all = useAllExpenses();
   const me = useCurrentUser().data;
 
-  // "Mine" = legacy unowned rows + the signed-in user's (matches ExpenseRow).
   const filtered = useMemo(() => {
     const list = all.data ?? [];
     if (person === "all") return list;
-    return list.filter(
-      (e) => e.user_id == null || (me != null && e.user_id === me.id),
-    );
+    return list.filter((e) => isOwnExpense(e, me));
   }, [all.data, person, me]);
 
   const monthView = useMemo(
@@ -234,13 +226,17 @@ export function Insights() {
   const yearCats = yearView.categories.map(toCat);
 
   const openCategory = (slug: string) => {
+    const params = new URLSearchParams({ year: String(cursor.year) });
     if (isYear) {
-      navigate(`/insights/category/${slug}?year=${cursor.year}&view=year`);
+      params.set("view", "year");
     } else {
-      navigate(
-        `/insights/category/${slug}?year=${cursor.year}&month=${cursor.month}&view=month`,
-      );
+      params.set("month", String(cursor.month));
+      params.set("view", "month");
     }
+    // Carry the person scope so CategoryDetails filters the same rows and
+    // the back-arrow restores the toggle.
+    if (person === "mine") params.set("person", "mine");
+    navigate(`/insights/category/${slug}?${params.toString()}`);
   };
 
   return (
@@ -326,18 +322,11 @@ export function Insights() {
             </div>
           </div>
           {hasChange ? (
-            <div
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                padding: "5px 10px",
-                borderRadius: 999,
-                background: isIncrease ? "#F0DEDA" : "#E0EAE4",
-                color: isIncrease ? t.red : t.green,
-              }}
-            >
-              {isIncrease ? "↑" : "↓"} {pctChange.toFixed(0)}% vs {prevLabel}
-            </div>
+            <DeltaPill
+              isIncrease={isIncrease}
+              percentageChange={pctChange}
+              prevLabel={prevLabel}
+            />
           ) : null}
         </div>
 
@@ -355,18 +344,9 @@ export function Insights() {
             {yearCats.length ? (
               <YearCategoryRows cats={yearCats} onSelect={openCategory} />
             ) : (
-              <div
-                style={{
-                  background: t.card,
-                  borderRadius: 22,
-                  padding: "20px 16px",
-                  textAlign: "center",
-                  color: t.ink2,
-                  fontSize: 14,
-                }}
-              >
+              <StatusNote card style={{ padding: "20px 16px", fontSize: 14 }}>
                 No spending in this period.
-              </div>
+              </StatusNote>
             )}
           </>
         ) : (

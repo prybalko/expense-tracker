@@ -14,24 +14,11 @@ import { useCategoryLookup } from "../hooks/useCategoryLookup";
 import { useErrorBanner } from "../hooks/useErrorBanner";
 import { messageForReadError } from "../api/errors";
 import { dayLabel, groupByDay } from "../groupByDay";
+import { MONTH_NAMES } from "../dates";
+import { StatusNote } from "../components/StatusNote";
 import { usePullToRefresh } from "../hooks/usePullToRefresh";
 import { useToday } from "../hooks/useToday";
 import type { Expense } from "../types";
-
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
 
 const PAGE = 50;
 
@@ -173,27 +160,9 @@ export function Feed() {
         />
         <div style={{ marginTop: 18 }}>
           {expenses.isLoading ? (
-            <div
-              style={{
-                padding: "24px",
-                textAlign: "center",
-                color: t.ink2,
-                fontSize: 13,
-              }}
-            >
-              Loading...
-            </div>
+            <StatusNote>Loading...</StatusNote>
           ) : grouped.length === 0 ? (
-            <div
-              style={{
-                padding: "32px 16px",
-                textAlign: "center",
-                color: t.ink2,
-                fontSize: 13,
-              }}
-            >
-              No expenses yet. Tap + to add your first one.
-            </div>
+            <StatusNote>No expenses yet. Tap + to add your first one.</StatusNote>
           ) : (
             grouped.map(({ day, items }) => (
               <DayGroup

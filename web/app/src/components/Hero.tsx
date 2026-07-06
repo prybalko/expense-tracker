@@ -1,5 +1,6 @@
 import { theme, FONT } from "../theme";
 import { splitInt } from "../format";
+import { DeltaPill } from "./DeltaPill";
 
 type Props = {
   monthName: string;
@@ -20,12 +21,6 @@ export function Hero({
 }: Props) {
   const t = theme;
   const { int, dec } = splitInt(total);
-  const arrow = isIncrease ? "↑" : "↓";
-  const deltaText = prevMonthName
-    ? `${arrow} ${Math.abs(percentageChange).toFixed(0)}% vs ${prevMonthName}`
-    : `${arrow} ${Math.abs(percentageChange).toFixed(0)}%`;
-  const deltaBg = isIncrease ? "#F2D7DA" : "#E0EAE4";
-  const deltaColor = isIncrease ? t.red : t.green;
 
   return (
     <div
@@ -47,18 +42,11 @@ export function Hero({
       >
         <span>{monthName}</span>
         {hasChange ? (
-          <span
-            style={{
-              background: deltaBg,
-              color: deltaColor,
-              padding: "4px 10px",
-              borderRadius: 999,
-              fontSize: 12,
-              fontWeight: 500,
-            }}
-          >
-            {deltaText}
-          </span>
+          <DeltaPill
+            isIncrease={isIncrease}
+            percentageChange={percentageChange}
+            prevLabel={prevMonthName}
+          />
         ) : null}
       </div>
       <div

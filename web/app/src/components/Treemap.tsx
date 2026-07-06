@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { theme, FONT } from "../theme";
 import { CategoryGlyph } from "./CategoryGlyph";
+import { StatusNote } from "./StatusNote";
 import { fmtEUR } from "../format";
 import type { CategoryColor } from "../types";
 
@@ -121,18 +122,9 @@ export function Treemap({ cats, onSelect }: Props) {
         }}
       >
         {!hasCats ? (
-          <div
-            style={{
-              background: t.card,
-              borderRadius: 22,
-              padding: "40px 20px",
-              textAlign: "center",
-              color: t.ink2,
-              fontSize: 14,
-            }}
-          >
+          <StatusNote card style={{ padding: "40px 20px", fontSize: 14 }}>
             No spending in this period.
-          </div>
+          </StatusNote>
         ) : (
           rects.map((r) => {
           const big = r.w > 78 && r.h > 52;

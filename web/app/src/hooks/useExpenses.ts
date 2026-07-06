@@ -52,6 +52,13 @@ export function useCurrentUser(): UseQueryResult<User, Error> {
   });
 }
 
+// "Mine" = legacy unowned rows + the signed-in user's. Shared by the
+// Insights person filter and useCategoryView so the two screens can never
+// disagree about which rows count as the user's own.
+export function isOwnExpense(e: Expense, me: User | null | undefined): boolean {
+  return e.user_id == null || (me != null && e.user_id === me.id);
+}
+
 // lastSyncKey holds the server's wall-clock at the moment the client last
 // successfully synced. The full-list query populates it on cold start; the
 // diff hook advances it on every successful /changes call; every mutation
@@ -195,6 +202,7 @@ export function useCategoryView(
   year: number,
   month: number | null,
   label: string,
+  mineOnly = false,
 ): {
   items: Expense[];
   total: number;
@@ -204,8 +212,14 @@ export function useCategoryView(
   isLoading: boolean;
 } {
   const query = useAllExpenses();
+  const meQuery = useCurrentUser();
+  const me = meQuery.data;
   const view = useMemo(() => {
-    const all = query.data ?? [];
+    // Apply the same person scope Insights used, so the "% of total" here
+    // matches the treemap share the user tapped through from.
+    const all = mineOnly
+      ? (query.data ?? []).filter((e) => isOwnExpense(e, me))
+      : (query.data ?? []);
     // Single month, or the whole year when `month` is null.
     const inScope = (iso: string): boolean => {
       if (!iso || iso.length < 10) return false;
@@ -224,8 +238,14 @@ export function useCategoryView(
     }
     const pct = monthTotal > 0 ? (total / monthTotal) * 100 : 0;
     return { items, total, count: items.length, monthTotal, pct };
-  }, [query.data, year, month, label]);
-  return { ...view, isLoading: query.isLoading };
+  }, [query.data, year, month, label, mineOnly, me]);
+  // A mine-scoped view filtered before /api/auth/me resolves would render
+  // finished-but-wrong numbers (own rows excluded), so the identity fetch
+  // counts as loading whenever the scope depends on it.
+  return {
+    ...view,
+    isLoading: query.isLoading || (mineOnly && meQuery.isLoading),
+  };
 }
 
 export type CreateExpenseMutation = UseMutationResult<

@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { theme, FONT } from "../theme";
+import { SectionLabel } from "../components/SectionLabel";
 import { login } from "../api/auth";
 import { ApiError } from "../api/client";
 
@@ -14,6 +15,8 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const disabled = submitting || !username.trim() || !password;
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -77,19 +80,7 @@ export function Login() {
           Sign in to continue
         </p>
         <form onSubmit={onSubmit} data-testid="login-form">
-          <label
-            style={{
-              display: "block",
-              fontSize: 11,
-              fontWeight: 500,
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
-              color: t.ink2,
-              marginBottom: 6,
-            }}
-          >
-            Username
-          </label>
+          <SectionLabel style={{ marginBottom: 6 }}>Username</SectionLabel>
           <input
             type="text"
             value={username}
@@ -113,19 +104,7 @@ export function Login() {
               marginBottom: 14,
             }}
           />
-          <label
-            style={{
-              display: "block",
-              fontSize: 11,
-              fontWeight: 500,
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
-              color: t.ink2,
-              marginBottom: 6,
-            }}
-          >
-            Password
-          </label>
+          <SectionLabel style={{ marginBottom: 6 }}>Password</SectionLabel>
           <input
             type="password"
             value={password}
@@ -159,25 +138,19 @@ export function Login() {
           ) : null}
           <button
             type="submit"
-            disabled={submitting || !username.trim() || !password}
+            disabled={disabled}
             data-testid="login-submit"
             style={{
               marginTop: 18,
               width: "100%",
               padding: "14px",
               borderRadius: 999,
-              background:
-                submitting || !username.trim() || !password
-                  ? t.keyDisabled
-                  : t.accent,
+              background: disabled ? t.keyDisabled : t.accent,
               color: t.accentText,
               border: "none",
               fontSize: 14,
               fontWeight: 600,
-              cursor:
-                submitting || !username.trim() || !password
-                  ? "default"
-                  : "pointer",
+              cursor: disabled ? "default" : "pointer",
               fontFamily: FONT,
             }}
           >

@@ -1,4 +1,5 @@
 import { theme, FONT } from "../theme";
+import { fmtEUR } from "../format";
 import { CategoryGlyph } from "./CategoryGlyph";
 import { useCategoryLookup } from "../hooks/useCategoryLookup";
 import { useCurrentUser } from "../hooks/useExpenses";
@@ -103,7 +104,7 @@ export function ExpenseRow({ expense, slug, isFirst = false, onClick }: Props) {
             fontVariantNumeric: "tabular-nums",
           }}
         >
-          −€{expense.amount.toFixed(2)}
+          −{fmtEUR(expense.amount)}
         </span>
         <svg
           width="14"

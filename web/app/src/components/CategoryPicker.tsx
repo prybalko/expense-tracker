@@ -3,6 +3,7 @@ import type { UIEvent } from "react";
 import { theme, FONT } from "../theme";
 import { categories } from "../categories";
 import { CategoryGlyph } from "./CategoryGlyph";
+import { SectionLabel } from "./SectionLabel";
 import type { Category } from "../types";
 
 type Props = {
@@ -60,18 +61,7 @@ export function CategoryPicker({ value, onChange, usageCounts = {} }: Props) {
 
   return (
     <div style={{ padding: "6px 0 4px", fontFamily: FONT }}>
-      <div
-        style={{
-          fontSize: 12,
-          color: t.ink2,
-          fontWeight: 500,
-          letterSpacing: "0.04em",
-          textTransform: "uppercase",
-          padding: "0 18px 8px",
-        }}
-      >
-        Category
-      </div>
+      <SectionLabel style={{ padding: "0 18px 8px" }}>Category</SectionLabel>
       <div
         ref={scrollerRef}
         onScroll={onScroll}

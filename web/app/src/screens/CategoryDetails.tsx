@@ -7,26 +7,14 @@ import {
 import { theme, FONT } from "../theme";
 import { CategoryGlyph } from "../components/CategoryGlyph";
 import { DayGroup } from "../components/DayGroup";
+import { IconButton } from "../components/IconButton";
+import { StatusNote } from "../components/StatusNote";
 import { useCategoryLookup } from "../hooks/useCategoryLookup";
 import { useCategoryView } from "../hooks/useExpenses";
 import { useToday } from "../hooks/useToday";
 import { groupByDay, dayLabel } from "../groupByDay";
 import { splitInt } from "../format";
-
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
+import { MONTH_NAMES } from "../dates";
 
 export function CategoryDetails() {
   const t = theme;
@@ -48,6 +36,9 @@ export function CategoryDetails() {
 
   // `view=year` → whole-year breakdown instead of a single month.
   const isYearScope = searchParams.get("view") === "year";
+  // `person=mine` → scope both the items and the "% of total" denominator
+  // to the signed-in user, matching the Insights toggle the user came from.
+  const mineOnly = searchParams.get("person") === "mine";
 
   const lookup = useCategoryLookup();
   const cat = lookup.bySlug(slug) ?? lookup.fallback;
@@ -56,7 +47,12 @@ export function CategoryDetails() {
   // One selector returns all four header numbers in a single useMemo over
   // the same array, so `pct = total / monthTotal * 100` can never flicker
   // (no longer two independent queries resolving at different times).
-  const view = useCategoryView(year, isYearScope ? null : month, cat.label);
+  const view = useCategoryView(
+    year,
+    isYearScope ? null : month,
+    cat.label,
+    mineOnly,
+  );
   const { items, total, count, pct, isLoading } = view;
 
   const grouped = useMemo(() => groupByDay(items), [items]);
@@ -86,6 +82,7 @@ export function CategoryDetails() {
       params.set("year", String(year));
       params.set("month", String(month));
     }
+    if (mineOnly) params.set("person", "mine");
     const qs = params.toString();
     navigate(qs ? `/insights?${qs}` : "/insights");
   };
@@ -114,22 +111,10 @@ export function CategoryDetails() {
           flexShrink: 0,
         }}
       >
-        <button
-          type="button"
+        <IconButton
           onClick={goBack}
           aria-label="Back"
           data-testid="category-details-back"
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 18,
-            background: t.card,
-            border: "none",
-            color: t.ink,
-            cursor: "pointer",
-            display: "grid",
-            placeItems: "center",
-          }}
         >
           <svg
             width="16"
@@ -143,7 +128,7 @@ export function CategoryDetails() {
           >
             <path d="M15 6l-6 6 6 6" />
           </svg>
-        </button>
+        </IconButton>
         <span style={{ fontSize: 14, fontWeight: 500, color: t.ink2 }}>
           Insights
         </span>
@@ -252,30 +237,11 @@ export function CategoryDetails() {
         </div>
 
         {isLoading ? (
-          <div
-            style={{
-              padding: "32px 16px",
-              textAlign: "center",
-              color: t.ink2,
-              fontSize: 13,
-            }}
-          >
-            Loading...
-          </div>
+          <StatusNote>Loading...</StatusNote>
         ) : count === 0 ? (
-          <div
-            style={{
-              background: t.card,
-              borderRadius: 22,
-              padding: "32px 20px",
-              marginTop: 16,
-              textAlign: "center",
-              color: t.ink2,
-              fontSize: 13,
-            }}
-          >
+          <StatusNote card style={{ padding: "32px 20px", marginTop: 16 }}>
             No transactions in this category yet.
-          </div>
+          </StatusNote>
         ) : (
           <div style={{ marginTop: 18 }}>
             {grouped.map(({ day, items: dayItems }) => (

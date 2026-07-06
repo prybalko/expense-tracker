@@ -1,4 +1,4 @@
-import { theme } from "../theme";
+import { IconButton } from "./IconButton";
 
 type Props = {
   label: string;
@@ -11,28 +11,14 @@ type ChevProps = { dir: -1 | 1; off: boolean; onStep: (dir: -1 | 1) => void };
 
 // Chevron that dims when it can't move in its direction.
 function Chev({ dir, off, onStep }: ChevProps) {
-  const t = theme;
   return (
-    <button
-      type="button"
+    <IconButton
       onClick={() => !off && onStep(dir)}
       disabled={off}
       aria-label={dir < 0 ? "Previous period" : "Next period"}
       data-testid={dir < 0 ? "period-prev" : "period-next"}
-      style={{
-        width: 36,
-        height: 36,
-        borderRadius: 999,
-        border: "none",
-        cursor: off ? "default" : "pointer",
-        background: "transparent",
-        color: t.ink,
-        opacity: off ? 0.18 : 0.6,
-        display: "grid",
-        placeItems: "center",
-        flex: "0 0 auto",
-        transition: "opacity .15s",
-      }}
+      background="transparent"
+      style={{ opacity: off ? 0.18 : 0.6, transition: "opacity .15s" }}
     >
       <svg
         width="18"
@@ -46,7 +32,7 @@ function Chev({ dir, off, onStep }: ChevProps) {
       >
         <path d={dir < 0 ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6"} />
       </svg>
-    </button>
+    </IconButton>
   );
 }
 

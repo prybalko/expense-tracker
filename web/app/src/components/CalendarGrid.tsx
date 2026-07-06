@@ -1,20 +1,9 @@
 import { theme, FONT } from "../theme";
+import { MONTH_NAMES } from "../dates";
+import { IconButton } from "./IconButton";
 
-const WEEKDAYS_MIN = ["S", "M", "T", "W", "T", "F", "S"];
-const MONTHS_LONG = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
+// Monday-first, matching the en-GB date formatting used everywhere else.
+const WEEKDAYS_MIN = ["M", "T", "W", "T", "F", "S", "S"];
 
 const sameYMD = (a: Date, b: Date): boolean =>
   a.getFullYear() === b.getFullYear() &&
@@ -46,7 +35,8 @@ export function CalendarGrid({
   const y = viewMonth.getFullYear();
   const m = viewMonth.getMonth();
   const first = new Date(y, m, 1);
-  const startWeekday = first.getDay();
+  // getDay() is Sunday-based; rotate so Monday occupies column 0.
+  const startWeekday = (first.getDay() + 6) % 7;
   const daysInMonth = new Date(y, m + 1, 0).getDate();
 
   const cells: (Date | null)[] = [];
@@ -75,20 +65,11 @@ export function CalendarGrid({
           padding: "0 4px 10px",
         }}
       >
-        <button
-          type="button"
+        <IconButton
           onClick={() => setViewMonth(new Date(y, m - 1, 1))}
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: 15,
-            background: "transparent",
-            border: "none",
-            cursor: "pointer",
-            color: t.ink,
-            display: "grid",
-            placeItems: "center",
-          }}
+          aria-label="Previous month"
+          size={30}
+          background="transparent"
         >
           <svg
             width="14"
@@ -101,26 +82,17 @@ export function CalendarGrid({
           >
             <path d="M15 6l-6 6 6 6" />
           </svg>
-        </button>
+        </IconButton>
         <span style={{ fontSize: 14, fontWeight: 600 }}>
-          {MONTHS_LONG[m]} {y}
+          {MONTH_NAMES[m]} {y}
         </span>
-        <button
-          type="button"
+        <IconButton
           onClick={() => setViewMonth(new Date(y, m + 1, 1))}
+          aria-label="Next month"
           disabled={!canNext}
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: 15,
-            background: "transparent",
-            border: "none",
-            cursor: canNext ? "pointer" : "default",
-            color: t.ink,
-            display: "grid",
-            placeItems: "center",
-            opacity: canNext ? 1 : 0.25,
-          }}
+          size={30}
+          background="transparent"
+          style={{ opacity: canNext ? 1 : 0.25 }}
         >
           <svg
             width="14"
@@ -133,7 +105,7 @@ export function CalendarGrid({
           >
             <path d="M9 6l6 6-6 6" />
           </svg>
-        </button>
+        </IconButton>
       </div>
 
       <div
