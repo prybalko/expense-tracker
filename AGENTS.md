@@ -102,3 +102,7 @@ via runtime caching of `GET /api/expenses`).
   Go deps and pins frontend deps; prefer extending what's already there.
 - Keep components small; colocate `data-testid` attributes with the
   interactive element the test needs to click/read.
+- Comment sparingly — the maintainer doesn't read comments. Write one only
+  when the code can't show a real constraint (invariant, workaround, iOS
+  quirk) and keep it to a line or two. Never narrate what the code does,
+  restate history, or justify a change.

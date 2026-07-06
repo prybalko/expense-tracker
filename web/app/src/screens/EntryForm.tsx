@@ -8,6 +8,7 @@ import type { KeypadKey } from "../components/Keypad";
 import { DatePickerPill } from "../components/DatePickerPill";
 import { useToday } from "../hooks/useToday";
 import { resolveSubmitDate } from "./entryDate";
+import { amountToKeypadString, applyKeypadKey } from "./entryAmount";
 import {
   useAllExpenses,
   useCreateExpense,
@@ -101,18 +102,7 @@ function FormBody({
   // these wrappers instead of calling the raw setters directly.
   const press = (k: KeypadKey) => {
     clearBannerError();
-    setAmt((a) => {
-      if (k === "del") return a.slice(0, -1);
-      if (k === ".") {
-        if (a.includes(".")) return a;
-        if (a === "") return "0.";
-        return a + ".";
-      }
-      if (a === "0") return k;
-      const [, decPart] = a.split(".");
-      if (decPart && decPart.length >= 2) return a;
-      return (a + k).slice(0, 8);
-    });
+    setAmt((a) => applyKeypadKey(a, k));
   };
 
   const onCatChange = (next: string) => {
@@ -197,10 +187,8 @@ function FormBody({
   };
 
   const display = amt || "0";
-  const [intP, decPRaw] = display.includes(".")
-    ? display.split(".")
-    : [display, null];
-  const decP = decPRaw === null ? null : decPRaw;
+  const [intP, decTyped = ""] = display.split(".");
+  const dotTyped = display.includes(".");
   const canSubmit = !!parseFloat(amt) && !submitting;
 
   return (
@@ -340,11 +328,15 @@ function FormBody({
               €
             </span>
             <span style={{ color: amt ? t.ink : t.barOther }}>{intP}</span>
-            {decP !== null ? (
-              <span style={{ fontSize: 40, color: t.ink2 }}>
-                .{decP.padEnd(2, "0").slice(0, 2)}
+            {/* Cents are always shown; the untyped tail stays in the
+                placeholder tone so ⌫ feedback is never hidden by padding. */}
+            <span style={{ fontSize: 40 }}>
+              <span style={{ color: dotTyped ? t.ink2 : t.barOther }}>.</span>
+              <span style={{ color: t.ink2 }}>{decTyped.slice(0, 2)}</span>
+              <span style={{ color: t.barOther }}>
+                {"0".repeat(Math.max(0, 2 - decTyped.length))}
               </span>
-            ) : null}
+            </span>
           </div>
         </div>
 
@@ -603,7 +595,7 @@ export function EntryForm() {
     );
   }
 
-  const initialAmt = editing ? editing.amount.toFixed(2) : "";
+  const initialAmt = editing ? amountToKeypadString(editing.amount) : "";
   const initialCategory = editing ? editing.category : defaultCategory;
   const initialNote = editing ? (editing.description ?? "") : "";
   const initialDate = editing ? parseIsoDate(editing.date) : new Date();

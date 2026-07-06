@@ -274,8 +274,11 @@ func (s *E2ETestSuite) TestEditExpenseFlow() {
 	err = s.expect.Locator(s.page.Locator(tid("entry-note"))).ToHaveValue("Original Expense")
 	s.Require().NoError(err, "note not populated for edit")
 
-	// 3. Clear "50.00" by hammering del five times — the amount string is the
-	//    full toFixed(2) form once the row exists, not "50".
+	// Prefill strips padding zeros: "50", not "50.00".
+	err = s.expect.Locator(s.page.Locator(tid("entry-amount"))).ToHaveAttribute("data-amount", "50")
+	s.Require().NoError(err, "amount not prefilled in trailing-zero-stripped form")
+
+	// 3. Clear the amount; extra del presses on empty are no-ops.
 	for range 5 {
 		err = s.page.Locator(tid("keypad-del")).Click()
 		s.Require().NoError(err, "failed to press del")
