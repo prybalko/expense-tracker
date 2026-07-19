@@ -42,6 +42,11 @@ func SetSessionCookie(w http.ResponseWriter, token string, secure bool) {
 
 // ClearSessionCookie expires the session cookie on the client.
 func ClearSessionCookie(w http.ResponseWriter, secure bool) {
+	// Drop any session refresh queued earlier in the request (the auth
+	// middleware re-sends the cookie on every authenticated response) so
+	// the clearing cookie is the only one the browser sees. The session
+	// cookie is the only cookie this app ever sets.
+	w.Header().Del("Set-Cookie")
 	//nolint:gosec // Secure flag is configurable via secure param
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,

@@ -104,6 +104,20 @@ func (s *SessionTestSuite) TestRenewSession() {
 		"ExpiresAt should be extended after renewal")
 }
 
+func (s *SessionTestSuite) TestValidateExpiredSession() {
+	token, err := auth.GenerateSessionToken()
+	s.Require().NoError(err)
+
+	err = s.db.CreateSession(token, s.user.ID, time.Now().Add(-time.Hour))
+	s.Require().NoError(err)
+
+	// An expired-but-present session must be distinguishable from a
+	// storage failure so the auth middleware only clears the client's
+	// cookie when the session is definitively gone.
+	_, err = s.db.ValidateSessionWithInfo(token)
+	s.Require().ErrorIs(err, ErrSessionExpired)
+}
+
 func (s *SessionTestSuite) TestDeleteSession() {
 	token, err := auth.GenerateSessionToken()
 	s.Require().NoError(err)

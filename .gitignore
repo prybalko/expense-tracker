@@ -13,8 +13,10 @@ bin/
 !/web/dist/index.html
 !/web/dist/.gitkeep
 
-# Database
+# Database (including WAL sidecar files)
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 

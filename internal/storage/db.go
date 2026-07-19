@@ -14,7 +14,15 @@ type DB struct {
 
 // NewDB opens a database connection and runs migrations.
 func NewDB(path string) (*DB, error) {
-	conn, err := sql.Open("sqlite", path)
+	// busy_timeout makes a connection wait (up to 5s) for a competing
+	// writer instead of failing instantly with SQLITE_BUSY, and WAL lets
+	// readers proceed while a commit is in flight. Without both, the
+	// PWA's concurrent open-time requests routinely hit "database is
+	// locked" during session renewal — which the auth middleware used to
+	// escalate into a spurious logout. The pragmas ride on the DSN so
+	// they apply to every connection database/sql pools.
+	dsn := "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}

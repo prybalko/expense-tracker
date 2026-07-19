@@ -1,10 +1,15 @@
 package storage
 
 import (
+	"errors"
 	"time"
 
 	"expense-tracker/internal/models"
 )
+
+// ErrSessionExpired reports a session whose expiry has passed. Callers
+// treat it like sql.ErrNoRows: the token no longer grants access.
+var ErrSessionExpired = errors.New("session expired")
 
 // SessionInfo holds session validation data.
 type SessionInfo struct {
@@ -13,12 +18,16 @@ type SessionInfo struct {
 	ExpiresAt    time.Time
 }
 
+// Session times are bound as UTC everywhere in this file: the driver
+// serializes time.Time to text, and text written as local wall time would
+// change meaning whenever the process timezone does.
+
 // CreateSession creates a new session for a user.
 func (db *DB) CreateSession(token string, userID int64, expiresAt time.Time) error {
 	now := time.Now()
 	_, err := db.conn.Exec(
 		"INSERT INTO sessions (token, user_id, expires_at, last_activity) VALUES (?, ?, ?, ?)",
-		token, userID, expiresAt, now,
+		token, userID, expiresAt.UTC(), now.UTC(),
 	)
 	return err
 }
@@ -32,19 +41,29 @@ func (db *DB) ValidateSession(token string) (*models.User, error) {
 	return info.User, nil
 }
 
-// ValidateSessionWithInfo checks if a session token is valid and returns session details.
+// ValidateSessionWithInfo checks if a session token is valid and returns
+// session details. It returns sql.ErrNoRows for an unknown token and
+// ErrSessionExpired for a known-but-expired one; any other error is a
+// storage failure, not a verdict on the session.
 func (db *DB) ValidateSessionWithInfo(token string) (*SessionInfo, error) {
 	row := db.conn.QueryRow(`
 		SELECT u.id, u.username, u.password_hash, u.created_at, s.last_activity, s.expires_at
 		FROM sessions s
 		JOIN users u ON s.user_id = u.id
-		WHERE s.token = ? AND s.expires_at > CURRENT_TIMESTAMP
+		WHERE s.token = ?
 	`, token)
 
 	var u models.User
 	var lastActivity, expiresAt time.Time
 	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.CreatedAt, &lastActivity, &expiresAt); err != nil {
 		return nil, err
+	}
+	// Expiry is checked in Go rather than in SQL: the driver stores
+	// time.Time as formatted text, and comparing that lexicographically
+	// against CURRENT_TIMESTAMP silently depends on the text layout and
+	// the process timezone.
+	if !expiresAt.After(time.Now()) {
+		return nil, ErrSessionExpired
 	}
 	return &SessionInfo{
 		User:         &u,
@@ -58,7 +77,7 @@ func (db *DB) RenewSession(token string, newExpiresAt time.Time) error {
 	now := time.Now()
 	_, err := db.conn.Exec(
 		"UPDATE sessions SET last_activity = ?, expires_at = ? WHERE token = ?",
-		now, newExpiresAt, token,
+		now.UTC(), newExpiresAt.UTC(), token,
 	)
 	return err
 }
@@ -71,6 +90,6 @@ func (db *DB) DeleteSession(token string) error {
 
 // CleanExpiredSessions removes all expired sessions.
 func (db *DB) CleanExpiredSessions() error {
-	_, err := db.conn.Exec("DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP")
+	_, err := db.conn.Exec("DELETE FROM sessions WHERE expires_at <= ?", time.Now().UTC())
 	return err
 }

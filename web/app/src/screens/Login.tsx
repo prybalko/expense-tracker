@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { theme, FONT } from "../theme";
 import { SectionLabel } from "../components/SectionLabel";
-import { login } from "../api/auth";
+import { getMe, login } from "../api/auth";
 import { ApiError } from "../api/client";
 
 export function Login() {
@@ -17,6 +17,23 @@ export function Login() {
   const [submitting, setSubmitting] = useState(false);
 
   const disabled = submitting || !username.trim() || !password;
+
+  // A transient failure can bounce an authenticated user here (client.ts
+  // redirects on any 401). If the session cookie is in fact still valid,
+  // skip the form and return to the app instead of demanding credentials.
+  useEffect(() => {
+    let cancelled = false;
+    getMe()
+      .then(() => {
+        if (!cancelled) navigate("/", { replace: true });
+      })
+      .catch(() => {
+        // Not signed in — stay on the form.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();

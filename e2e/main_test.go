@@ -53,8 +53,15 @@ func runTestMain(m *testing.M) int {
 
 	// 2. Start the server
 	dbPath = filepath.Join(os.TempDir(), "test_expenses.db")
-	os.Remove(dbPath) // Ensure clean state
-	defer os.Remove(dbPath)
+	// Remove the WAL sidecars along with the DB — a stale -wal from a
+	// previous run paired with a fresh DB file corrupts the new database.
+	removeDB := func() {
+		os.Remove(dbPath)
+		os.Remove(dbPath + "-wal")
+		os.Remove(dbPath + "-shm")
+	}
+	removeDB() // Ensure clean state
+	defer removeDB()
 
 	port := "8081"
 	appURL = "http://localhost:" + port

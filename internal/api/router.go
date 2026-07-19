@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http"
+	"sync"
+	"time"
 
 	"expense-tracker/internal/storage"
 )
@@ -10,11 +12,20 @@ import (
 type Server struct {
 	db           *storage.DB
 	secureCookie bool
+
+	// renewMu/lastRenewal single-flight the sliding session renewal so
+	// concurrent requests don't all UPDATE the same session row at once.
+	renewMu     sync.Mutex
+	lastRenewal map[string]time.Time
 }
 
 // NewServer constructs a Server.
 func NewServer(db *storage.DB, secureCookie bool) *Server {
-	return &Server{db: db, secureCookie: secureCookie}
+	return &Server{
+		db:           db,
+		secureCookie: secureCookie,
+		lastRenewal:  make(map[string]time.Time),
+	}
 }
 
 // NewRouter wires every /api/* route. Public routes (login) bypass the auth
