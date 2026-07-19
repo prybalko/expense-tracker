@@ -63,7 +63,7 @@ func TestAuthMiddlewareConcurrentAppOpen(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	since := time.Now().UTC().Format(time.RFC3339)
-	do := func(round int, method, path string, body string) (*http.Response, error) {
+	do := func(method, path, body string) (*http.Response, error) {
 		var rdr io.Reader
 		if body != "" {
 			rdr = strings.NewReader(body)
@@ -80,7 +80,7 @@ func TestAuthMiddlewareConcurrentAppOpen(t *testing.T) {
 	}
 
 	const rounds = 25
-	for round := 0; round < rounds; round++ {
+	for round := range rounds {
 		type call struct {
 			method, path, body string
 		}
@@ -103,7 +103,7 @@ func TestAuthMiddlewareConcurrentAppOpen(t *testing.T) {
 			wg.Add(1)
 			go func(c call) {
 				defer wg.Done()
-				res, err := do(round, c.method, c.path, c.body)
+				res, err := do(c.method, c.path, c.body)
 				if err != nil {
 					errs <- fmt.Sprintf("%s %s: %v", c.method, c.path, err)
 					return
