@@ -541,11 +541,7 @@ func TestHandleListChanges(t *testing.T) {
 }
 
 // TestWriteHandlersSetServerTime pins the X-Server-Time header on every
-// mutation. The client's lastSyncAt depends on this header for POST (body
-// is the row, no serverTime field) and DELETE (body is empty). Without it,
-// two back-to-back writes + a Feed sync would re-emit the second write as
-// a "change" and briefly show a duplicate row until React's reconciler
-// caught up.
+// mutation. The client must not advance lastSyncAt from it.
 func TestWriteHandlersSetServerTime(t *testing.T) {
 	env := newTestEnv(t)
 	seeded, err := env.db.InsertExpense(10, "Seed", "Other", time.Now(), env.user.ID)
@@ -702,5 +698,28 @@ func TestExpenseEndpointsSharedAcrossUsers(t *testing.T) {
 	decodeBody(t, rec, &afterDelete)
 	if len(afterDelete.Items) != 1 || afterDelete.Items[0].ID != aliceExp.ID {
 		t.Fatalf("after delete got %+v, want only alice's row", afterDelete.Items)
+	}
+}
+
+// A write can commit after a reader handed out a later cursor.
+func TestHandleListChangesResendsLateCommits(t *testing.T) {
+	env := newTestEnv(t)
+	late, err := env.db.InsertExpense(10, "Late", "Other", time.Now(), env.user.ID)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	cursor := late.UpdatedAt.Add(2 * time.Second)
+
+	target := "/api/expenses/changes?since=" + cursor.Format(time.RFC3339Nano)
+	req := env.withUser(buildRequest(t, http.MethodGet, target, nil))
+	rec := httptest.NewRecorder()
+	env.server.handleListChanges(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200", rec.Code)
+	}
+	var resp changesResponse
+	decodeBody(t, rec, &resp)
+	if len(resp.Updated) != 1 || resp.Updated[0].ID != late.ID {
+		t.Fatalf("expected the late row to be re-sent, got %+v", resp.Updated)
 	}
 }

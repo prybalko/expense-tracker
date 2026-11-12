@@ -24,14 +24,13 @@ const (
 	maxDescriptionLength = 200
 	maxCategoryLength    = 64
 
-	// serverTimeHeader carries the authoritative server wall-clock on
-	// every successful expenses-API response. The client mirrors it into
-	// its lastSyncAt marker; the next `GET /api/expenses/changes?since=...`
-	// call uses that marker to fetch only rows changed since the last
-	// round-trip. Writes don't have a server-time field in the body
-	// (POST returns the row, DELETE returns 204), so the header is the
-	// single place the marker can advance from a mutation.
+	// Only list/changes responses may move the client's lastSyncAt; a
+	// write's time says nothing about rows other users wrote in between.
 	serverTimeHeader = "X-Server-Time"
+
+	// changesOverlap re-sends writes stamped before but committed after a
+	// cursor (they wait on the SQLite writer lock). Best effort, not a bound.
+	changesOverlap = 10 * time.Second
 )
 
 // parseAPIDate accepts RFC3339 or the date-only "2006-01-02" form sent by the
@@ -119,6 +118,8 @@ func (s *Server) handleListExpenses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Stamped before the read so the cursor never passes a row it missed.
+	now := setServerTime(w)
 	items, err := s.db.ListExpensesAll()
 	if err != nil {
 		log.Printf("api: list expenses: %v", err)
@@ -128,7 +129,6 @@ func (s *Server) handleListExpenses(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []models.Expense{}
 	}
-	now := setServerTime(w)
 	writeJSON(w, http.StatusOK, listExpensesResponse{
 		Items:      items,
 		NextCursor: nil,
@@ -164,7 +164,8 @@ func (s *Server) handleListChanges(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	updated, deletedIDs, err := s.db.ListExpensesChangedSince(since)
+	now := setServerTime(w)
+	updated, deletedIDs, err := s.db.ListExpensesChangedSince(since.Add(-changesOverlap))
 	if err != nil {
 		log.Printf("api: list changes: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -176,7 +177,6 @@ func (s *Server) handleListChanges(w http.ResponseWriter, r *http.Request) {
 	if deletedIDs == nil {
 		deletedIDs = []int64{}
 	}
-	now := setServerTime(w)
 	writeJSON(w, http.StatusOK, changesResponse{
 		Updated:    updated,
 		DeletedIDs: deletedIDs,

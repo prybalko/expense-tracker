@@ -30,9 +30,7 @@ export function getExpense(id: number): Promise<Expense> {
 
 // ExpenseWriteResult is the shape every mutation returns to the React
 // Query layer: the canonical row (or null for deletes) plus the
-// X-Server-Time the backend stamped on this response. The sync hook
-// advances lastSyncAt off this value so a later Feed diff doesn't re-emit
-// rows that were just written locally.
+// X-Server-Time the backend stamped on this response.
 export type ExpenseWriteResult<T> = {
   data: T;
   serverTime: string | null;
