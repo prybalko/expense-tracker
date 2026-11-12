@@ -8,7 +8,6 @@ type Props<T extends string> = {
   onChange: (value: T) => void;
 };
 
-// Segmented control with a sliding thumb; generic so call sites stay type-safe.
 export function Segmented<T extends string>({
   options,
   value,

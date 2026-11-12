@@ -14,13 +14,8 @@ type DB struct {
 
 // NewDB opens a database connection and runs migrations.
 func NewDB(path string) (*DB, error) {
-	// busy_timeout makes a connection wait (up to 5s) for a competing
-	// writer instead of failing instantly with SQLITE_BUSY, and WAL lets
-	// readers proceed while a commit is in flight. Without both, the
-	// PWA's concurrent open-time requests routinely hit "database is
-	// locked" during session renewal — which the auth middleware used to
-	// escalate into a spurious logout. The pragmas ride on the DSN so
-	// they apply to every connection database/sql pools.
+	// busy_timeout waits for a competing writer instead of failing with SQLITE_BUSY, and WAL
+	// lets readers run during a commit. They sit on the DSN so every pooled connection gets them.
 	dsn := "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
 	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -68,35 +63,21 @@ func (db *DB) migrate() error {
 		}
 	}
 
-	// Add user_id column to expenses if it doesn't exist (for backwards compatibility)
-	// We ignore the error here because the column might already exist
+	// Errors ignored: ALTER TABLE ADD COLUMN fails once the column exists.
 	_, _ = db.conn.Exec(`ALTER TABLE expenses ADD COLUMN user_id INTEGER REFERENCES users(id)`)
 
-	// Add last_activity column to sessions for rolling sessions
 	_, _ = db.conn.Exec(`ALTER TABLE sessions ADD COLUMN last_activity DATETIME DEFAULT CURRENT_TIMESTAMP`)
 
-	// Add updated_at / deleted_at for delta sync. The client stores a
-	// lastSyncAt marker and asks for everything with updated_at > it on
-	// Feed entry; deletes flip deleted_at instead of removing the row so
-	// the diff can report them as tombstones. Existing rows get a
-	// backfilled updated_at so the very first post-migration diff call
-	// doesn't blindly re-emit every historical row as "new".
+	// Backfill updated_at so the first post-migration diff doesn't re-emit every old row.
 	_, _ = db.conn.Exec(`ALTER TABLE expenses ADD COLUMN updated_at DATETIME`)
 	_, _ = db.conn.Exec(`ALTER TABLE expenses ADD COLUMN deleted_at DATETIME`)
 	_, _ = db.conn.Exec(`UPDATE expenses SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL`)
 
-	// Partial unique index on (user_id, date, amount, description) that
-	// only covers live (non-tombstoned) rows. The non-partial variant from
-	// before soft-delete would prevent the user from legitimately recording
-	// an identical tuple after deleting the original — now that deletes
-	// don't remove the row, the index must scope itself to deleted_at IS
-	// NULL to match the new semantics.
+	// The unique index covers only live rows so a deleted tuple can be recorded again.
 	_, _ = db.conn.Exec(`DROP INDEX IF EXISTS expenses_date_amount_description_uindex`)
 	_, _ = db.conn.Exec(`DROP INDEX IF EXISTS expenses_user_date_amount_description_uindex`)
 	_, _ = db.conn.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS expenses_user_date_amount_description_uindex ON expenses (user_id, date, amount, description) WHERE deleted_at IS NULL`)
 
-	// Secondary index on updated_at to keep the delta-sync query O(log n)
-	// on the pruned set. Without this the Feed diff scans the whole table.
 	_, _ = db.conn.Exec(`CREATE INDEX IF NOT EXISTS expenses_user_updated_at_idx ON expenses (user_id, updated_at)`)
 	_, _ = db.conn.Exec(`CREATE INDEX IF NOT EXISTS expenses_user_deleted_at_idx ON expenses (user_id, deleted_at) WHERE deleted_at IS NOT NULL`)
 	return nil

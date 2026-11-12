@@ -34,11 +34,9 @@ func TestRun_DuplicateUser(t *testing.T) {
 
 	args := []string{"-user", "testuser", "-password", "secret", "-db", dbPath}
 
-	// First run
 	err := run(args, stdin, stdout, stderr)
 	require.NoError(t, err, "first run should succeed")
 
-	// Second run
 	stdout.Reset()
 	stderr.Reset()
 	err = run(args, stdin, stdout, stderr)
@@ -51,13 +49,11 @@ func TestRun_MissingUserFlag(t *testing.T) {
 	stderr := new(bytes.Buffer)
 	stdin := new(bytes.Buffer)
 
-	// Missing user
 	args := []string{"-password", "secret"}
 	err := run(args, stdin, stdout, stderr)
 	require.Error(t, err, "expected error for missing user flag")
 	assert.Contains(t, err.Error(), "missing required flags: user")
 
-	// Usage should be printed
 	assert.Contains(t, stdout.String(), "Usage:")
 }
 
@@ -67,16 +63,13 @@ func TestRun_InteractivePassword(t *testing.T) {
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)
 
-	// Simulate user typing "interactive_secret" followed by newline
 	stdin := bytes.NewBufferString("interactive_secret\n")
 
-	// Omit -password flag
 	args := []string{"-user", "interactive_user", "-db", dbPath}
 	err := run(args, stdin, stdout, stderr)
 	require.NoError(t, err)
 
 	output := stdout.String()
-	// Should verify that it prompted for password
 	assert.Contains(t, output, "Password: ")
 	assert.Contains(t, output, "User interactive_user created successfully")
 }
@@ -85,10 +78,8 @@ func TestRun_InteractivePassword_Empty(t *testing.T) {
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)
 
-	// Simulate user typing newline (empty password)
 	stdin := bytes.NewBufferString("\n")
 
-	// Omit -password flag
 	args := []string{"-user", "empty_pass_user"}
 	err := run(args, stdin, stdout, stderr)
 	require.Error(t, err, "expected error for empty password")
@@ -105,17 +96,14 @@ func TestRun_EnvVarOverride(t *testing.T) {
 	stderr := new(bytes.Buffer)
 	stdin := new(bytes.Buffer)
 
-	// Do not pass -db flag, let it use env var
 	args := []string{"-user", "envuser", "-password", "secret"}
 	err := run(args, stdin, stdout, stderr)
 	require.NoError(t, err)
 
-	// Verify DB file was created at dbPath
 	assert.FileExists(t, dbPath)
 }
 
 func TestRun_InvalidDBPath(t *testing.T) {
-	// Use a directory path as DB file path, which should fail
 	tmpDir := t.TempDir()
 
 	stdout := new(bytes.Buffer)

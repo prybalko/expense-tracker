@@ -1,8 +1,5 @@
 import { useEffect, useState } from "react";
 
-// startOfDay strips the time-of-day so "today" is a pure calendar date. All
-// day-label / current-period logic only cares about the y/m/d, and pinning to
-// midnight keeps the returned reference stable across intra-day refreshes.
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
@@ -15,20 +12,8 @@ function sameDay(a: Date, b: Date): boolean {
   );
 }
 
-// useToday returns the current calendar day and — crucially for the iOS PWA
-// case — recomputes it when the app comes back to the foreground or the local
-// day rolls over. A mount-time `useMemo(() => new Date(), [])` freezes at the
-// day the app was first loaded: iOS resumes a backgrounded PWA by thawing the
-// same JS heap WITHOUT remounting React, so the frozen value lingers and
-// yesterday's expenses keep the "Today" header (and any "current period" math
-// stays a day behind). This hook covers every resume path WebKit can take —
-// visibilitychange / pageshow / focus — plus a self-rescheduling timer that
-// fires just after the next local midnight for a foregrounded session.
-//
-// The setter is guarded by a date-only comparison: refresh events fire often,
-// but the state (and therefore the returned reference) only changes when the
-// calendar day actually changes, so consumers don't re-render or re-run
-// `today`-keyed memos on every focus.
+// iOS resumes a backgrounded PWA without remounting React, so a mount-time
+// date goes stale; recompute on every resume path and at local midnight.
 export function useToday(): Date {
   const [today, setToday] = useState<Date>(() => startOfDay(new Date()));
 
@@ -44,9 +29,7 @@ export function useToday(): Date {
       });
     };
 
-    // Fire just after the next local midnight, then reschedule. iOS throttles
-    // timers while backgrounded, so this only reliably covers a session left
-    // open in the foreground; the visibility/focus listeners handle resume.
+    // iOS throttles background timers, so this only covers foreground sessions.
     const scheduleMidnight = () => {
       const now = new Date();
       const nextMidnight = new Date(

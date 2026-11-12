@@ -59,7 +59,6 @@ func TestRouterEndToEndCreateAndList(t *testing.T) {
 	env := newTestEnv(t)
 	router := env.router()
 
-	// Create
 	body := map[string]any{
 		"amount":      9.99,
 		"description": "Test",
@@ -74,7 +73,6 @@ func TestRouterEndToEndCreateAndList(t *testing.T) {
 		t.Fatalf("create: got %d (body=%q)", rec.Code, rec.Body.String())
 	}
 
-	// List
 	req = buildRequest(t, http.MethodGet, "/api/expenses", nil)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: env.token})
 	rec = httptest.NewRecorder()

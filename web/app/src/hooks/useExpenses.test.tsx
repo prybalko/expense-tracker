@@ -70,7 +70,6 @@ describe("delta sync cursor", () => {
     const { qc, hook } = setup();
     await waitFor(() => expect(hook.result.current.list.isSuccess).toBe(true));
 
-    // The peer's row lands at T1; our own create answers at T2.
     api.createExpense.mockResolvedValue({ data: row(2, 1, T2), serverTime: T2 });
     await act(() => hook.result.current.create.mutateAsync({
       amount: 10, description: "mine", category: "Other",

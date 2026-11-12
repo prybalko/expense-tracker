@@ -1,13 +1,7 @@
 import { theme, FONT } from "../theme";
 import { useErrorBanner } from "../hooks/useErrorBanner";
 
-// ErrorBanner renders the currently-active message from useErrorBanner as a
-// top-fixed pill, stacked above every screen. It sits inside the 480px
-// mobile-card clip (position: fixed relative to the nearest containing
-// block is fine here because #root has no transform) so the banner lines up
-// with the card on desktop and respects the iOS notch / dynamic island
-// safe area on the phone. Tap to dismiss explicitly; the provider also
-// auto-hides after ~5s.
+// Relies on #root having no transform; one would re-anchor position: fixed.
 export function ErrorBanner() {
   const { message, clear } = useErrorBanner();
   if (!message) return null;

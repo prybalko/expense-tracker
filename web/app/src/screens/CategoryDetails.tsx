@@ -34,19 +34,13 @@ export function CategoryDetails() {
       ? monthParam
       : today.getMonth() + 1;
 
-  // `view=year` → whole-year breakdown instead of a single month.
   const isYearScope = searchParams.get("view") === "year";
-  // `person=mine` → scope both the items and the "% of total" denominator
-  // to the signed-in user, matching the Insights toggle the user came from.
   const mineOnly = searchParams.get("person") === "mine";
 
   const lookup = useCategoryLookup();
   const cat = lookup.bySlug(slug) ?? lookup.fallback;
   const tone = cat.color;
 
-  // One selector returns all four header numbers in a single useMemo over
-  // the same array, so `pct = total / monthTotal * 100` can never flicker
-  // (no longer two independent queries resolving at different times).
   const view = useCategoryView(
     year,
     isYearScope ? null : month,
@@ -58,8 +52,6 @@ export function CategoryDetails() {
   const grouped = useMemo(() => groupByDay(items), [items]);
   const slugFor = lookup.slugByLabel;
 
-  // Without the year, the screen says "spent this month" while showing
-  // 2024 data — actively misleading once the user can navigate years.
   const isCurrentYear = year === today.getFullYear();
   const isCurrentMonth = isCurrentYear && month === today.getMonth() + 1;
   const monthName = MONTH_NAMES[month - 1] ?? "";

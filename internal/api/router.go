@@ -13,8 +13,7 @@ type Server struct {
 	db           *storage.DB
 	secureCookie bool
 
-	// renewMu/lastRenewal single-flight the sliding session renewal so
-	// concurrent requests don't all UPDATE the same session row at once.
+	// renewMu/lastRenewal single-flight session renewal writes.
 	renewMu     sync.Mutex
 	lastRenewal map[string]time.Time
 }
@@ -28,8 +27,7 @@ func NewServer(db *storage.DB, secureCookie bool) *Server {
 	}
 }
 
-// NewRouter wires every /api/* route. Public routes (login) bypass the auth
-// middleware; everything else requires a valid session cookie.
+// NewRouter wires every /api/* route.
 func NewRouter(db *storage.DB, secureCookie bool) http.Handler {
 	s := NewServer(db, secureCookie)
 

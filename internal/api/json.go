@@ -6,11 +6,7 @@ import (
 	"net/http"
 )
 
-// maxRequestBody caps decoded JSON payloads. The largest legitimate request is
-// a create/update expense, whose fields are a single float and three short
-// strings — well under 1 KiB. 64 KiB leaves slack for verbose descriptions
-// without leaving the door open to a multi-megabyte memory exhaustion via
-// json.Decode on an authenticated endpoint.
+// Real requests are under 1 KiB; the cap blocks memory exhaustion via json.Decode.
 const maxRequestBody = 64 * 1024
 
 type errorEnvelope struct {

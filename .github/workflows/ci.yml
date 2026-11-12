@@ -60,8 +60,6 @@ jobs:
     - name: Run Tests
       run: go test -v -race ./cmd/... ./internal/...
 
-    # The Playwright e2e suite still targets the old HTMX DOM. It is gated off
-    # until selectors are updated for the new React PWA in a follow-up PR.
     - name: Install Playwright
       if: false
       run: go run -mod=mod github.com/playwright-community/playwright-go/cmd/playwright install --with-deps

@@ -21,10 +21,6 @@ function orderCategories(
   const declIdx = new Map<string, number>();
   categories.forEach((c, i) => declIdx.set(c.label, i));
 
-  // Sort the entire list by usage (desc), with declaration order as the
-  // tie-breaker. Every page — not just the first — surfaces the most-used
-  // categories before less-used ones, so a never-used tile ends up at the
-  // very end regardless of which page it falls on.
   return [...categories].sort((a, b) => {
     const ca = usageCounts[a.label] ?? 0;
     const cb = usageCounts[b.label] ?? 0;
@@ -38,9 +34,7 @@ export function CategoryPicker({ value, onChange, usageCounts = {} }: Props) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [page, setPage] = useState(0);
 
-  // Re-sort when categories change, and once more when usage data first
-  // becomes available — but not on every usage-count tick after that, so the
-  // order doesn't shuffle mid-session as the user records new expenses.
+  // Re-sort only when usage first loads, so tiles don't shuffle mid-session.
   const hasUsageData = Object.keys(usageCounts).length > 0;
   const ordered = useMemo(
     () => orderCategories(categories, usageCounts),

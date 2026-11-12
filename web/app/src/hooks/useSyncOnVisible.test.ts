@@ -10,7 +10,6 @@ function setVisibility(state: "visible" | "hidden") {
   });
 }
 
-// Dispatch an event and let the burst-coalescing window elapse.
 function flushBurst() {
   vi.advanceTimersByTime(60);
 }
@@ -45,8 +44,6 @@ describe("useSyncOnVisible", () => {
     expect(cb).not.toHaveBeenCalled();
   });
 
-  // The reason this hook exists: iOS doesn't fire visibilitychange on every
-  // wake path, so the data sync must also catch pageshow / focus / online.
   it.each(["pageshow", "focus", "online"])("fires on %s", (evt) => {
     const cb = vi.fn();
     renderHook(() => useSyncOnVisible(cb));
@@ -61,7 +58,6 @@ describe("useSyncOnVisible", () => {
     const cb = vi.fn();
     renderHook(() => useSyncOnVisible(cb));
     act(() => {
-      // A single resume commonly emits all three together.
       window.dispatchEvent(new Event("pageshow"));
       window.dispatchEvent(new Event("focus"));
       document.dispatchEvent(new Event("visibilitychange"));

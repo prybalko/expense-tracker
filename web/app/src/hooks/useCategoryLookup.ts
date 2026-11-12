@@ -8,9 +8,7 @@ const FALLBACK: Category = {
   color: { bg: "#E0DCD4", ink: "#3A352E" },
 };
 
-// Active categories drive the picker; extended ones extend the palette so
-// any expense whose category matches one of those slugs/labels still
-// renders with the right glyph + tone.
+// Extended categories are not in the picker but still resolve for existing rows.
 const slugMap = new Map<string, Category>();
 const labelMap = new Map<string, Category>();
 for (const c of [...categories, ...extendedCategories]) {

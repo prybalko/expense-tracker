@@ -17,11 +17,8 @@ export function ExpenseRow({ expense, slug, isFirst = false, onClick }: Props) {
   const lookup = useCategoryLookup();
   const cat = lookup.bySlug(slug) ?? lookup.fallback;
   const tone = cat.color;
-  // Mark rows authored by someone other than the signed-in user with a
-  // small dot next to the category. Legacy unowned rows (user_id == null)
-  // and rows the signed-in user wrote both count as mine. While
-  // /api/auth/me is still in flight we treat every row as mine to avoid
-  // briefly flashing dots on every row during the cold-start render.
+  // Legacy rows (user_id == null) count as mine; so does every row until
+  // /api/auth/me resolves, to avoid a flash of dots on cold start.
   const me = useCurrentUser().data;
   const isNotMine =
     me != null && expense.user_id != null && expense.user_id !== me.id;
