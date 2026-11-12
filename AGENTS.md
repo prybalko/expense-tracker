@@ -90,7 +90,7 @@ web/app         Vite + React 19 + TS PWA source
 web/dist        Built bundle (gitignored apart from a placeholder)
 ```
 
-Stack: Go 1.25, SQLite via `modernc.org/sqlite` (CGo-free), React 19,
+Stack: Go 1.26, SQLite via `modernc.org/sqlite` (CGo-free), React 19,
 Vite 7, TanStack Query, `vite-plugin-pwa` + Workbox (read-only offline
 via runtime caching of `GET /api/expenses`).
 
