@@ -3,8 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useToday } from "./useToday";
 
-// jsdom defines visibilityState as a getter; override it per-test so we can
-// simulate the PWA being foreground/background.
+// jsdom defines visibilityState as a getter, so redefine it per test.
 function setVisibility(state: "visible" | "hidden") {
   Object.defineProperty(document, "visibilityState", {
     configurable: true,
@@ -37,24 +36,19 @@ describe("useToday", () => {
     const { result } = renderHook(() => useToday());
     const first = result.current;
 
-    // Foreground a few hours later — still the same calendar day.
     vi.setSystemTime(new Date(2026, 5, 16, 14, 0, 0));
     act(() => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
 
-    // Identical reference => React bailed out, no downstream memo invalidation.
     expect(result.current).toBe(first);
   });
 
-  // The reported bug: open the PWA in the morning and yesterday's data still
-  // says "today". This is the fix — resuming after midnight advances `today`.
   it("advances to the new day when the PWA resumes after midnight (visibilitychange)", () => {
     vi.setSystemTime(new Date(2026, 5, 16, 23, 0, 0)); // last night
     const { result } = renderHook(() => useToday());
     expect(result.current.getDate()).toBe(16);
 
-    // Overnight background freeze, resumed the next morning.
     vi.setSystemTime(new Date(2026, 5, 17, 8, 0, 0));
     act(() => {
       document.dispatchEvent(new Event("visibilitychange"));
@@ -93,8 +87,7 @@ describe("useToday", () => {
     const { result } = renderHook(() => useToday());
     expect(result.current.getDate()).toBe(16);
 
-    // Cross midnight by letting the scheduled timer fire (fake timers also
-    // advance the mocked clock, so `new Date()` reads the 17th when it runs).
+    // Fake timers also advance the mocked clock.
     act(() => {
       vi.advanceTimersByTime(35 * 1000);
     });
@@ -113,7 +106,6 @@ describe("useToday", () => {
     });
     expect(result.current.getDate()).toBe(16); // hidden => no refresh
 
-    // ...and catches up once it becomes visible again.
     setVisibility("visible");
     act(() => {
       document.dispatchEvent(new Event("visibilitychange"));
@@ -132,7 +124,6 @@ describe("useToday", () => {
       "visibilitychange",
       expect.any(Function),
     );
-    // No pending timers survive the unmount.
     expect(vi.getTimerCount()).toBe(0);
     removeSpy.mockRestore();
   });

@@ -87,11 +87,9 @@ func TestHandleLogout(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: got %d want 200", rec.Code)
 	}
-	// Session should be deleted.
 	if _, err := env.db.ValidateSession(env.token); err == nil {
 		t.Fatalf("expected session to be deleted, but it still validates")
 	}
-	// Cookie should be cleared (MaxAge<0).
 	cleared := false
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == auth.SessionCookieName && c.MaxAge < 0 {
@@ -120,7 +118,6 @@ func TestHandleMe(t *testing.T) {
 
 func TestHandleMeUnauthenticated(t *testing.T) {
 	env := newTestEnv(t)
-	// No user in context.
 	req := buildRequest(t, http.MethodGet, "/api/auth/me", nil)
 	rec := httptest.NewRecorder()
 	env.server.handleMe(rec, req)

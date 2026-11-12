@@ -8,7 +8,6 @@ type Props = {
   onMonth: (monthIndex: number) => void; // 0-based month index
 };
 
-// Year trend: 12 month bars; future months flatten, last elapsed is accented.
 export function MonthlyBars({ series, elapsed, onMonth }: Props) {
   const t = theme;
   const max = Math.max(...series, 1);

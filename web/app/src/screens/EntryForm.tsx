@@ -24,14 +24,8 @@ import { messageForWriteError } from "../api/errors";
 import type { Expense } from "../types";
 
 function toIsoDateTime(d: Date): string {
-  // Pin the user's calendar date and append local time-of-day with a Z
-  // suffix. The server's per-user unique index on (date, amount, description)
-  // would otherwise treat two legitimate same-day same-amount same-note
-  // expenses (e.g. two €4.50 coffees) as a duplicate and reject the second
-  // with a 409. Millisecond-precision timestamps keep them distinct. The Z
-  // suffix is intentional: the system treats dates as calendar abstractions
-  // (Feed slices the YYYY-MM-DD prefix), so a real timezone offset would let
-  // the prefix shift across midnight UTC and break grouping.
+  // Local time with ms keeps same-day duplicates distinct under the server's
+  // unique index; a fake Z stops an offset shifting the YYYY-MM-DD prefix.
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -57,8 +51,6 @@ function sameCalendarDay(a: Date, b: Date): boolean {
   );
 }
 
-// Full-screen fallback for the edit route's loading / error / not-found
-// states; the "Go back" action is omitted while loading.
 function FullScreenNote({
   message,
   onClose,
@@ -112,9 +104,8 @@ type FormProps = {
   initialCategory: string;
   initialNote: string;
   initialDate: Date;
-  // Original full timestamp string from the server, preserved across edits
-  // so that re-saving an unchanged calendar date doesn't silently shift the
-  // expense's stored time-of-day (and re-order it in the feed).
+  // Re-saving an unchanged day must keep this exact timestamp, or the feed
+  // re-orders.
   initialDateString: string | null;
   usageCounts: Record<string, number>;
   onClose: () => void;
@@ -140,16 +131,10 @@ function FormBody({
   const today = useToday();
   const { showError, clear: clearBannerError } = useErrorBanner();
 
-  // The date the pill shows. For a brand-new expense the user hasn't dated
-  // yet, it tracks the live current day (useToday refreshes on resume), so a
-  // form left open across an iOS overnight freeze shows the real day rather
-  // than the day it was opened. An explicit pick or an edit shows `date`.
+  // Tracks the live day so a form left open across an iOS overnight freeze
+  // shows today.
   const displayedDate = resolveSubmitDate(isEdit, dateTouched, date, today);
 
-  // Clear any lingering banner error as soon as the user starts editing
-  // again — stale copy from the previous attempt should disappear rather
-  // than hang around while they type. Each input handler funnels through
-  // these wrappers instead of calling the raw setters directly.
   const press = (k: KeypadKey) => {
     clearBannerError();
     setAmt((a) => applyKeypadKey(a, k));
@@ -184,14 +169,7 @@ function FormBody({
     const v = parseFloat(amt);
     if (!v || submitting) return;
     clearBannerError();
-    // On edit, preserve the original full timestamp when the user hasn't
-    // shifted the calendar day. Otherwise we'd silently overwrite the stored
-    // time-of-day with "now" on every save (re-ordering the feed and
-    // mutating the unique-index tuple even when the user only touched the
-    // amount or note).
-    // Last-line guarantee: a new, untouched expense persists the real current
-    // day even if the resume effect hasn't flushed yet (returns `date`
-    // unchanged for edits and explicit picks).
+    // Fresh clock: the resume effect may not have flushed `today` yet.
     const submitDate = resolveSubmitDate(isEdit, dateTouched, date, new Date());
     const preserveOriginal =
       isEdit && initialDateString !== null && sameCalendarDay(date, initialDate);
@@ -340,8 +318,6 @@ function FormBody({
               €
             </span>
             <span style={{ color: amt ? t.ink : t.barOther }}>{intP}</span>
-            {/* Cents are always shown; the untyped tail stays in the
-                placeholder tone so ⌫ feedback is never hidden by padding. */}
             <span style={{ fontSize: 40 }}>
               <span style={{ color: dotTyped ? t.ink2 : t.barOther }}>.</span>
               <span style={{ color: t.ink2 }}>{decTyped.slice(0, 2)}</span>
@@ -502,7 +478,6 @@ export function EntryForm() {
     if (isFetchingFromServer) {
       return <FullScreenNote message="Loading..." />;
     }
-    // Edit ID resolves to no record — neither in cache nor fetched.
     return <FullScreenNote message="Expense not found." onClose={onClose} />;
   }
 

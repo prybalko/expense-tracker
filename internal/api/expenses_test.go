@@ -15,7 +15,6 @@ import (
 func TestHandleListExpenses(t *testing.T) {
 	env := newTestEnv(t)
 
-	// Seed 3 expenses with distinct dates so ordering is unambiguous.
 	base := time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC)
 	for i, d := range []string{"oldest", "middle", "newest"} {
 		_, err := env.db.InsertExpense(float64((i+1)*10), d, "Other", base.Add(time.Duration(i)*time.Hour), env.user.ID)
@@ -39,18 +38,12 @@ func TestHandleListExpenses(t *testing.T) {
 		if resp.Items[0].Description != "newest" || resp.Items[2].Description != "oldest" {
 			t.Fatalf("ordering wrong: %+v", resp.Items)
 		}
-		// nextCursor stays nil forever — kept in the response shape so the
-		// TS ExpensePage type doesn't churn during the move off pagination.
 		if resp.NextCursor != nil {
 			t.Fatalf("nextCursor: got %v want nil", *resp.NextCursor)
 		}
 	})
 
 	t.Run("ignores legacy query params", func(t *testing.T) {
-		// The handler used to interpret limit/before/year/month/category;
-		// after the all-in refactor it returns the full list regardless.
-		// A stale client sending these params should still get the full
-		// dataset back rather than an error.
 		req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses?limit=1&year=2026&month=1&category=Other", nil))
 		rec := httptest.NewRecorder()
 		env.server.handleListExpenses(rec, req)
@@ -65,7 +58,6 @@ func TestHandleListExpenses(t *testing.T) {
 	})
 
 	t.Run("empty list returns empty array", func(t *testing.T) {
-		// Fresh env with no expenses.
 		fresh := newTestEnv(t)
 		req := fresh.withUser(buildRequest(t, http.MethodGet, "/api/expenses", nil))
 		rec := httptest.NewRecorder()
@@ -201,7 +193,6 @@ func TestHandleCreateExpense(t *testing.T) {
 func TestHandleCreateExpenseDuplicateReturns409(t *testing.T) {
 	env := newTestEnv(t)
 
-	// First insert succeeds.
 	body := map[string]any{
 		"amount": 12.34, "description": "Coffee", "category": "Eating Out",
 		"date": "2026-04-15T08:30:00Z",
@@ -213,9 +204,6 @@ func TestHandleCreateExpenseDuplicateReturns409(t *testing.T) {
 		t.Fatalf("first insert: got %d want 201 (body=%q)", rec.Code, rec.Body.String())
 	}
 
-	// Replaying the same payload (e.g. an offline-queue retry whose original
-	// already landed) must come back as 409 — not 500 — so the queued entry
-	// is dropped instead of jammed behind a "retryable" 5xx.
 	req = env.withUser(buildRequest(t, http.MethodPost, "/api/expenses", body))
 	rec = httptest.NewRecorder()
 	env.server.handleCreateExpense(rec, req)
@@ -251,7 +239,6 @@ func TestHandleCreateExpenseRejectsOversizedFields(t *testing.T) {
 
 func TestHandleCreateExpenseRejectsOversizedBody(t *testing.T) {
 	env := newTestEnv(t)
-	// Build a JSON body larger than maxRequestBody so MaxBytesReader trips.
 	huge := strings.Repeat("a", maxRequestBody+1024)
 	body := map[string]any{
 		"amount": 5, "description": huge, "category": "Other",
@@ -266,7 +253,6 @@ func TestHandleCreateExpenseRejectsOversizedBody(t *testing.T) {
 
 func TestHandleCreateExpenseUnauthenticated(t *testing.T) {
 	env := newTestEnv(t)
-	// No user in context.
 	body := map[string]any{"amount": 5, "category": "Other"}
 	req := buildRequest(t, http.MethodPost, "/api/expenses", body)
 	rec := httptest.NewRecorder()
@@ -349,10 +335,7 @@ func TestHandleUpdateExpenseDuplicateReturns409(t *testing.T) {
 		t.Fatalf("seed second: %v", err)
 	}
 
-	// Patch `second` so its (date, amount, description) collides with `first`.
-	// A queued update whose collision is permanent must come back as 409 —
-	// not 500 — so the offline replay path drops it instead of jamming the
-	// queue behind a "retryable" 5xx.
+	// Collides with first's (date, amount, description).
 	body := map[string]any{
 		"amount":      first.Amount,
 		"description": first.Description,
@@ -400,11 +383,6 @@ func TestHandleDeleteExpense(t *testing.T) {
 
 func itoa(i int64) string { return fmt.Sprintf("%d", i) }
 
-// TestListExpensesIncludesServerTime pins the contract every client
-// relies on: the full-list response carries a serverTime the client pins
-// as its initial lastSyncAt. Without this field the Feed would have no
-// baseline to hand to /api/expenses/changes?since=... and the delta-sync
-// flow would degrade to a full refetch on every navigation.
 func TestListExpensesIncludesServerTime(t *testing.T) {
 	env := newTestEnv(t)
 	_, err := env.db.InsertExpense(5, "x", "Other", time.Now(), env.user.ID)
@@ -430,12 +408,9 @@ func TestListExpensesIncludesServerTime(t *testing.T) {
 	}
 }
 
-// TestHandleListChanges exercises the delta endpoint's full contract.
 func TestHandleListChanges(t *testing.T) {
 	env := newTestEnv(t)
 
-	// Seed a row that will be present BEFORE the cutoff; it should never
-	// appear in the diff so long as nothing touches it.
 	old, err := env.db.InsertExpense(10, "Old", "Other", time.Now(), env.user.ID)
 	if err != nil {
 		t.Fatalf("seed old: %v", err)
@@ -444,8 +419,6 @@ func TestHandleListChanges(t *testing.T) {
 	cutoff := time.Now().UTC()
 	time.Sleep(2 * time.Millisecond)
 
-	// Insert a new row and edit the old one — both must come back in
-	// `updated`.
 	fresh, err := env.db.InsertExpense(20, "Fresh", "Other", time.Now(), env.user.ID)
 	if err != nil {
 		t.Fatalf("seed fresh: %v", err)
@@ -455,8 +428,6 @@ func TestHandleListChanges(t *testing.T) {
 		t.Fatalf("update old: %v", err)
 	}
 
-	// Seed a row and soft-delete it — its id must come back in
-	// `deletedIds`, not `updated`.
 	doomed, err := env.db.InsertExpense(30, "Doomed", "Other", time.Now(), env.user.ID)
 	if err != nil {
 		t.Fatalf("seed doomed: %v", err)
@@ -540,8 +511,6 @@ func TestHandleListChanges(t *testing.T) {
 	})
 }
 
-// TestWriteHandlersSetServerTime pins the X-Server-Time header on every
-// mutation. The client must not advance lastSyncAt from it.
 func TestWriteHandlersSetServerTime(t *testing.T) {
 	env := newTestEnv(t)
 	seeded, err := env.db.InsertExpense(10, "Seed", "Other", time.Now(), env.user.ID)
@@ -595,16 +564,9 @@ func TestWriteHandlersSetServerTime(t *testing.T) {
 	})
 }
 
-// TestExpenseEndpointsSharedAcrossUsers verifies the shared-household model:
-// every authenticated user can list, read, edit and delete every row, but
-// the original author (user_id) is preserved on update. The previous design
-// hid other users' rows; this test pins the intentional reversal so it
-// can't silently regress.
 func TestExpenseEndpointsSharedAcrossUsers(t *testing.T) {
 	env := newTestEnv(t)
 
-	// Second user. They never log in directly in this test, but their
-	// rows must be reachable to the seeded "alice" account via the API.
 	hash, err := auth.HashPassword("hunter2")
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
@@ -614,10 +576,6 @@ func TestExpenseEndpointsSharedAcrossUsers(t *testing.T) {
 		t.Fatalf("create user bob: %v", err)
 	}
 
-	// Alice and Bob each insert one expense. The per-user partial unique
-	// index still lets them share business-key tuples (same date/amount/desc
-	// for different users), so we differ the description here only to make
-	// the assertions readable.
 	date := time.Date(2026, 4, 15, 8, 30, 0, 0, time.UTC)
 	aliceExp, err := env.db.InsertExpense(4.50, "Alice coffee", "Eating Out", date, env.user.ID)
 	if err != nil {
@@ -628,9 +586,6 @@ func TestExpenseEndpointsSharedAcrossUsers(t *testing.T) {
 		t.Fatalf("bob insert: %v", err)
 	}
 
-	// Alice's list returns BOTH rows (date+id ordering: bob's row was
-	// inserted second so its id is larger and at the same date it sorts
-	// first under (date DESC, id DESC)).
 	req := env.withUser(buildRequest(t, http.MethodGet, "/api/expenses", nil))
 	rec := httptest.NewRecorder()
 	env.server.handleListExpenses(rec, req)
@@ -647,7 +602,6 @@ func TestExpenseEndpointsSharedAcrossUsers(t *testing.T) {
 		t.Fatalf("alice list missing one of the expected rows: %+v", aliceList.Items)
 	}
 
-	// Alice fetches Bob's row by id — 200 with Bob's data.
 	req = env.withUser(buildRequest(t, http.MethodGet, "/api/expenses/"+itoa(bobExp.ID), nil))
 	req.SetPathValue("id", itoa(bobExp.ID))
 	rec = httptest.NewRecorder()
@@ -656,9 +610,7 @@ func TestExpenseEndpointsSharedAcrossUsers(t *testing.T) {
 		t.Fatalf("alice get bob's row: got %d want 200 (body=%q)", rec.Code, rec.Body.String())
 	}
 
-	// Alice updates Bob's row. The amount and description change, but the
-	// row's user_id must remain Bob — Alice editing Bob's row doesn't
-	// silently transfer authorship.
+	// Editing must not transfer authorship.
 	req = env.withUser(buildRequest(t, http.MethodPatch, "/api/expenses/"+itoa(bobExp.ID),
 		map[string]any{"amount": 11.11, "description": "Bob lunch (edited by Alice)"}))
 	req.SetPathValue("id", itoa(bobExp.ID))
@@ -678,7 +630,6 @@ func TestExpenseEndpointsSharedAcrossUsers(t *testing.T) {
 		t.Fatalf("user_id must remain Bob (%d) after Alice's edit, got %v", bob.ID, got.UserID)
 	}
 
-	// Alice deletes Bob's row — 204, and the row really is gone.
 	req = env.withUser(buildRequest(t, http.MethodDelete, "/api/expenses/"+itoa(bobExp.ID), nil))
 	req.SetPathValue("id", itoa(bobExp.ID))
 	rec = httptest.NewRecorder()
@@ -690,7 +641,6 @@ func TestExpenseEndpointsSharedAcrossUsers(t *testing.T) {
 		t.Fatalf("bob's row should be tombstoned after alice's delete")
 	}
 
-	// After the delete only Alice's row survives in the list.
 	req = env.withUser(buildRequest(t, http.MethodGet, "/api/expenses", nil))
 	rec = httptest.NewRecorder()
 	env.server.handleListExpenses(rec, req)

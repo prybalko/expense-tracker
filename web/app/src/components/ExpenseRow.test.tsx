@@ -22,9 +22,6 @@ function makeExpense(overrides: Partial<Expense>): Expense {
   };
 }
 
-// Pre-seed the auth/me cache so useCurrentUser resolves synchronously
-// without firing a real fetch. retry:false keeps the cache strict if a
-// test ever forgets to seed.
 function renderWithUser(ui: ReactElement, me: User | null) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false } },

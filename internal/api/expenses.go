@@ -15,17 +15,10 @@ import (
 )
 
 const (
-	// Caps on free-text fields to keep stored rows and the unique-index
-	// (date, amount, description) bounded. The PWA's notes field is a
-	// short caption — 200 chars is generous. The category is a freeform
-	// string (canonical list lives on the frontend); 64 chars is well
-	// over any realistic label. Aligned with the 64 KiB body cap in
-	// json.go.
+	// Bound stored rows and the (date, amount, description) unique index.
 	maxDescriptionLength = 200
 	maxCategoryLength    = 64
 
-	// Only list/changes responses may move the client's lastSyncAt; a
-	// write's time says nothing about rows other users wrote in between.
 	serverTimeHeader = "X-Server-Time"
 
 	// changesOverlap re-sends writes stamped before but committed after a
@@ -33,8 +26,6 @@ const (
 	changesOverlap = 10 * time.Second
 )
 
-// parseAPIDate accepts RFC3339 or the date-only "2006-01-02" form sent by the
-// PWA's date picker. The date-only form is interpreted as UTC midnight.
 func parseAPIDate(s string) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t, nil
@@ -42,40 +33,25 @@ func parseAPIDate(s string) (time.Time, error) {
 	return time.Parse("2006-01-02", s)
 }
 
-// formatServerTime is the single place that decides the textual form of
-// updated_at / deleted_at / serverTime wire values. RFC3339Nano matches
-// Go's default time.Time JSON encoding, so the field returned in the body
-// and the X-Server-Time header are byte-identical, and the client can hand
-// either one straight back to `?since=...` on the next diff call.
+// Must match time.Time's JSON encoding so body and header values are
+// interchangeable as ?since=.
 func formatServerTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
-// setServerTime stamps the response with the current wall-clock. Handlers
-// call it just before writing their body so the client's lastSyncAt can
-// advance off this request — even for 204 No Content deletes where the
-// body carries no data.
 func setServerTime(w http.ResponseWriter) time.Time {
 	now := time.Now().UTC()
 	w.Header().Set(serverTimeHeader, formatServerTime(now))
 	return now
 }
 
-// listExpensesResponse carries the full dataset on cold start plus a
-// `serverTime` the client pins as its initial lastSyncAt. `nextCursor`
-// stays permanently null — the pagination it used to drive is gone, but
-// removing the field would churn the TypeScript ExpensePage type for no
-// benefit.
+// NextCursor is always null; it stays so the client's ExpensePage type is stable.
 type listExpensesResponse struct {
 	Items      []models.Expense `json:"items"`
 	NextCursor *string          `json:"nextCursor"`
 	ServerTime string           `json:"serverTime"`
 }
 
-// changesResponse is the delta-sync payload returned by
-// GET /api/expenses/changes?since=<ts>. `updated` covers inserts and
-// updates uniformly (the client upserts by id), `deletedIds` tombstones,
-// and `serverTime` is the cursor the client should use on the next call.
 type changesResponse struct {
 	Updated    []models.Expense `json:"updated"`
 	DeletedIDs []int64          `json:"deletedIds"`
@@ -106,12 +82,7 @@ func (s *Server) handleGetExpense(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, exp)
 }
 
-// handleListExpenses returns every live expense across the whole household.
-// The app intentionally shares one ledger across every authenticated user,
-// so this endpoint takes no per-user filter. The client caches the array
-// under a single React Query key and derives Feed, Insights, and
-// CategoryDetails views from it locally; the response includes `serverTime`
-// so the client can pin its initial lastSyncAt for subsequent diffs.
+// All users share one ledger, so there is intentionally no per-user filter.
 func (s *Server) handleListExpenses(w http.ResponseWriter, r *http.Request) {
 	if _, ok := auth.UserFromContext(r.Context()); !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
@@ -136,15 +107,6 @@ func (s *Server) handleListExpenses(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleListChanges powers the Feed-mount delta sync. The client supplies
-// its lastSyncAt as `?since=<RFC3339>`; we return every row whose
-// updated_at is strictly greater than that (inserts + updates) plus the
-// ids of every row soft-deleted since then. The response's serverTime
-// becomes the client's new lastSyncAt.
-//
-// `since` is required and must parse as RFC3339 (Go's time.Time default
-// marshal) — any other format is a client bug, not a transient condition
-// to retry, so we answer 400 instead of silently returning the full list.
 func (s *Server) handleListChanges(w http.ResponseWriter, r *http.Request) {
 	if _, ok := auth.UserFromContext(r.Context()); !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
@@ -235,9 +197,7 @@ func (s *Server) handleCreateExpense(w http.ResponseWriter, r *http.Request) {
 	created, err := s.db.InsertExpense(req.Amount, req.Description, req.Category, date, user.ID)
 	if err != nil {
 		if errors.Is(err, storage.ErrDuplicateExpense) {
-			// A row with the same (date, amount, description) already exists.
-			// Return 409 so the offline-queue replay path treats this as a
-			// drop instead of a retryable 5xx that would block the queue.
+			// 409, not 5xx, so the offline queue drops the replay instead of blocking.
 			writeError(w, http.StatusConflict, "expense already exists")
 			return
 		}
@@ -322,10 +282,7 @@ func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.db.UpdateExpense(existing); err != nil {
 		if errors.Is(err, storage.ErrDuplicateExpense) {
-			// New (date, amount, description) collides with another row.
-			// Return 409 so the offline-queue replay path drops the entry
-			// instead of retrying it as a "transient" 5xx and blocking
-			// every later queued write.
+			// 409, not 5xx, so the offline queue drops the replay instead of blocking.
 			writeError(w, http.StatusConflict, "expense already exists")
 			return
 		}

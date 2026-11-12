@@ -33,9 +33,6 @@ export function Feed() {
   const lookup = useCategoryLookup();
   const slugFor = lookup.slugByLabel;
 
-  // Delta sync no longer fires on every Feed mount. The sync
-  // is user-driven (pull-to-refresh) plus a visibilitychange handler
-  // for the PWA-resumed-from-background case.
   const syncMutate = sync.mutate;
   const triggerSync = useCallback(() => {
     return new Promise<void>((resolve) => {
@@ -46,7 +43,7 @@ export function Feed() {
           showError("Couldn't refresh. The request took too long.");
           resolve();
         }
-      }, 10000); // 10s timeout for the pull-to-refresh spinner
+      }, 10000);
 
       syncMutate(undefined, {
         onSuccess: () => {
@@ -68,22 +65,13 @@ export function Feed() {
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pull = usePullToRefresh(scrollRef, triggerSync);
-  // Resume-driven sync now lives app-wide in <ResumeSync/>; the Feed keeps
-  // only the manual pull gesture.
 
-  // Surface cold-start fetch failures the same way. Without this the Feed
-  // would quietly sit on an empty state and the user would have no signal
-  // that the app couldn't load their data.
   useEffect(() => {
     if (expenses.isError && expenses.error) {
       showError(messageForReadError(expenses.error));
     }
   }, [expenses.isError, expenses.error, showError]);
 
-  // Windowed render: bump `visible` as the sentinel scrolls into view.
-  // Replaces the old useInfiniteQuery + cursor pagination — the data is
-  // already fully in memory once the all-expenses query lands, so all we
-  // need here is a slice + a counter.
   const [visible, setVisible] = useState(PAGE);
   const allItems = useMemo<Expense[]>(
     () => expenses.data ?? [],
@@ -171,10 +159,7 @@ export function Feed() {
                 items={items}
                 slugFor={slugFor}
                 onItemClick={(e) => {
-                  // Optimistic temp rows have negative ids and no server-side
-                  // record yet — opening the edit form for them would route to
-                  // /edit/-1 and the API rejects id <= 0. Wait for the create
-                  // to land before allowing edits.
+                  // Optimistic rows have negative temp ids the API rejects.
                   if (e.id < 0) return;
                   navigate(`/edit/${e.id}`);
                 }}

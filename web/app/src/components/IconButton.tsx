@@ -23,9 +23,8 @@ export function IconButton({
   style,
   ...rest
 }: Props) {
-  // iOS tap targets must be ≥ 44×44px even when the visual circle is
-  // smaller; the negative margin keeps the layout footprint at `size` so
-  // surrounding flex spacing doesn't shift.
+  // 44×44px minimum iOS tap target; the negative margin keeps the layout
+  // footprint at `size`.
   const hit = Math.max(size, 44);
   const inset = (hit - size) / 2;
   return (

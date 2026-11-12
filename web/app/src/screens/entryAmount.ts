@@ -1,7 +1,6 @@
 import type { KeypadKey } from "../components/Keypad";
 
-// Keypad prefill: strip padding zeros ("50.00" → "50", "12.50" → "12.5") so
-// the first ⌫ press removes a digit the user can see.
+// Strip padding zeros so the first ⌫ removes a digit the user can see.
 export function amountToKeypadString(amount: number): string {
   return amount.toFixed(2).replace(/\.?0+$/, "");
 }

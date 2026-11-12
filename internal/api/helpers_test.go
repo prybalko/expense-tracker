@@ -24,8 +24,6 @@ type testEnv struct {
 	token  string
 }
 
-// newTestEnv spins up an in-memory DB, registers a user, creates a session,
-// and returns a ready-to-use test environment.
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 	db, err := storage.NewDB(":memory:")
@@ -60,7 +58,6 @@ func newTestEnv(t *testing.T) *testEnv {
 	}
 }
 
-// authedRequest builds a request with the test session cookie set.
 func (e *testEnv) authedRequest(method, target string, body any) *http.Request {
 	e.t.Helper()
 	req := buildRequest(e.t, method, target, body)
@@ -68,14 +65,11 @@ func (e *testEnv) authedRequest(method, target string, body any) *http.Request {
 	return req
 }
 
-// withUser injects the user into the request context, simulating what the
-// auth middleware does for protected handlers.
 func (e *testEnv) withUser(req *http.Request) *http.Request {
 	ctx := context.WithValue(req.Context(), auth.UserContextKey, e.user)
 	return req.WithContext(ctx)
 }
 
-// router returns the live router (with middleware) for end-to-end-style tests.
 func (e *testEnv) router() http.Handler {
 	return NewRouter(e.db, false)
 }

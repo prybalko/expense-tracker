@@ -50,14 +50,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("failed to read password: %w", err)
 		}
-		fmt.Fprintln(stdout) // Print newline after password input
+		fmt.Fprintln(stdout)
 	}
 
 	if strings.TrimSpace(password) == "" {
 		return fmt.Errorf("password cannot be empty")
 	}
 
-	// Allow overriding db path via env var if not explicitly set via flag (flag default is used)
 	if path := os.Getenv("DB_PATH"); path != "" && *dbPath == "expenses.db" {
 		*dbPath = path
 	}
@@ -68,7 +67,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	}
 	defer db.Close()
 
-	// Check if user already exists
 	existingUser, err := db.GetUserByUsername(*username)
 	if err == nil && existingUser != nil {
 		return fmt.Errorf("user %s already exists", *username)
@@ -89,7 +87,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 }
 
 func readPassword(stdin io.Reader) (string, error) {
-	// Check if stdin is a terminal
 	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		bytePassword, err := term.ReadPassword(int(f.Fd()))
 		if err != nil {
@@ -98,7 +95,6 @@ func readPassword(stdin io.Reader) (string, error) {
 		return string(bytePassword), nil
 	}
 
-	// Fallback for non-terminal (e.g. tests, pipes)
 	scanner := bufio.NewScanner(stdin)
 	if scanner.Scan() {
 		return scanner.Text(), nil

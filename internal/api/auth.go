@@ -35,8 +35,6 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	user, err := s.db.GetUserByUsername(username)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		// A storage failure is not a wrong password — don't teach the
-		// user their credentials are bad when the DB hiccuped.
 		log.Printf("api: get user: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return

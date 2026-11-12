@@ -18,9 +18,8 @@ export function Login() {
 
   const disabled = submitting || !username.trim() || !password;
 
-  // A transient failure can bounce an authenticated user here (client.ts
-  // redirects on any 401). If the session cookie is in fact still valid,
-  // skip the form and return to the app instead of demanding credentials.
+  // client.ts redirects here on any 401, so a transient failure can land a
+  // still-valid session on this form.
   useEffect(() => {
     let cancelled = false;
     getMe()

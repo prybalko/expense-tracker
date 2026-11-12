@@ -18,7 +18,6 @@ export type TreemapCat = {
 type Sized = TreemapCat & { a: number };
 type Rect = TreemapCat & { x: number; y: number; w: number; h: number };
 
-// Squarified treemap: block area ∝ spend share, aspect ratios kept near 1.
 function squarify(items: TreemapCat[], W: number, H: number): Rect[] {
   const total = items.reduce((s, i) => s + i.amount, 0) || 1;
   const scale = (W * H) / total;
@@ -94,7 +93,7 @@ export function Treemap({ cats, onSelect }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
 
-  // Measure width (absolute tiles need concrete px); keep it in sync on resize.
+  // Absolute tiles need a concrete px width.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -109,8 +108,7 @@ export function Treemap({ cats, onSelect }: Props) {
   const H = Math.round(width * ASPECT);
   const rects = hasCats && width > 0 ? squarify(cats, width, H) : [];
 
-  // Ref div is always mounted so width stays measured across empty↔populated
-  // transitions (early-returning before it would strand the measurement at 0).
+  // Keep the ref div mounted when empty, or the measured width sticks at 0.
   return (
     <div style={{ fontFamily: FONT }}>
       <div

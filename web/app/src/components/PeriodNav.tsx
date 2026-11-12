@@ -9,7 +9,6 @@ type Props = {
 
 type ChevProps = { dir: -1 | 1; off: boolean; onStep: (dir: -1 | 1) => void };
 
-// Chevron that dims when it can't move in its direction.
 function Chev({ dir, off, onStep }: ChevProps) {
   return (
     <IconButton

@@ -24,7 +24,6 @@ import type { CategoryBreakdown } from "../types";
 type Person = "all" | "mine";
 type Period = "month" | "year";
 
-// Compact category list for the year view (month view uses the treemap).
 function YearCategoryRows({
   cats,
   onSelect,
@@ -121,8 +120,7 @@ export function Insights() {
   const today = useToday();
   const lookup = useCategoryLookup();
 
-  // Seed from the URL so CategoryDetails' back-arrow restores the
-  // period/view/person selection.
+  // Seed from the URL so CategoryDetails' back-arrow restores the selection.
   const [period, setPeriod] = useState<Period>(() =>
     searchParams.get("view") === "year" ? "year" : "month",
   );
@@ -186,7 +184,6 @@ export function Insights() {
       ? monthName
       : `${monthName} ${cursor.year}`;
 
-  // Prev always allowed; next clamped at the present via absolute month index.
   const canPrev = true;
   const todayAbs = today.getFullYear() * 12 + today.getMonth();
   const cursorAbs = cursor.year * 12 + (cursor.month - 1);
@@ -233,8 +230,6 @@ export function Insights() {
       params.set("month", String(cursor.month));
       params.set("view", "month");
     }
-    // Carry the person scope so CategoryDetails filters the same rows and
-    // the back-arrow restores the toggle.
     if (person === "mine") params.set("person", "mine");
     navigate(`/insights/category/${slug}?${params.toString()}`);
   };
@@ -270,7 +265,6 @@ export function Insights() {
           Insights
         </h1>
 
-        {/* Controls — sliding pills + airy period navigator */}
         <div style={{ display: "flex", gap: 8 }}>
           <Segmented<Person>
             value={person}
@@ -296,7 +290,6 @@ export function Insights() {
           onStep={step}
         />
 
-        {/* Hero — total + average + delta pill */}
         <div
           style={{
             display: "flex",
@@ -330,7 +323,6 @@ export function Insights() {
           ) : null}
         </div>
 
-        {/* Period-aware main visual */}
         {isYear ? (
           <>
             <MonthlyBars

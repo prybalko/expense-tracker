@@ -1,11 +1,5 @@
-// Pure derivations from the in-memory expenses array. The all-in refactor
-// moved aggregation off the server (was internal/insights) and into the
-// client so that one fetch can drive Feed, Insights, and CategoryDetails
-// without coordinating multiple queries on every navigation. Keep these
-// functions pure and timezone-honest by parsing dates as YYYY-MM-DD
-// calendar prefixes (matching the convention in EntryForm.toIsoDateTime
-// and groupByDay.ts) rather than constructing Date objects, which would
-// silently shift across midnight in non-UTC zones.
+// Parse dates as YYYY-MM-DD prefixes, never via Date, which shifts across
+// midnight in non-UTC zones.
 
 import type {
   CategoryBreakdown,
@@ -29,9 +23,7 @@ function parseYMD(iso: string): YMD | null {
   return { year: y, month: m, day: d };
 }
 
-// Days in a given calendar month. Date.UTC(year, monthIdx, 0) returns the
-// last day of the previous month, so passing the 1-based month gives the
-// last day of `month` itself (e.g. month=2 → Feb 29 in a leap year).
+// Day 0 of the 0-based month index is the last day of the 1-based `month`.
 function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
@@ -41,10 +33,6 @@ function isInMonth(iso: string, year: number, month: number): boolean {
   return ymd !== null && ymd.year === year && ymd.month === month;
 }
 
-// Mirrors internal/insights.percentChange: returns the absolute percentage
-// change, its direction, and a `hasChange` flag that is false whenever the
-// previous period had no spending (avoids dividing by zero and avoids
-// surfacing meaningless "+infinity%" deltas in the UI).
 function percentChange(current: number, previous: number) {
   if (previous <= 0) return { pct: 0, isIncrease: false, hasChange: false };
   const raw = ((current - previous) / previous) * 100;
@@ -91,13 +79,6 @@ function sumForMonth(
   return sum;
 }
 
-// deriveInsights produces the same shape that the deleted Go endpoint
-// (internal/insights.Month) used to return, so the consuming screens
-// (Insights.tsx, Feed Hero) require no JSX changes. `now` is the caller's
-// local "today" — Insights.tsx already memoises `new Date()` once per mount
-// and we use the local day for the elapsed-day average and the
-// "is current period" branch so the Insights chart's "today" highlight
-// stays in sync with what the user sees on their device.
 export function deriveInsights(
   expenses: Expense[],
   year: number,
@@ -109,7 +90,6 @@ export function deriveInsights(
   const days = daysInMonth(year, month);
   const todayDay = now.getDate();
 
-  // Single pass: per-category totals, per-day totals, grand total.
   const categoryTotals = new Map<string, { total: number; count: number }>();
   const dailyMap = new Map<number, number>();
   let total = 0;
@@ -131,9 +111,7 @@ export function deriveInsights(
   const prevMonth = month === 1 ? 12 : month - 1;
   const prevDays = daysInMonth(prevYear, prevMonth);
 
-  // For the current period we compare month-to-date against the same number
-  // of elapsed days in the previous month (clamped to that month's length).
-  // Otherwise compare full month vs full previous month.
+  // Current period: month-to-date vs the same elapsed days of last month.
   let compareTotal = total;
   let prevTotal: number;
   if (isCurrentPeriod) {
@@ -159,7 +137,6 @@ export function deriveInsights(
     chart[day - 1] = { label, value };
   }
 
-  // Sort categories by total DESC to match the original SQL ORDER BY.
   const categories: CategoryBreakdown[] = Array.from(categoryTotals.entries())
     .map(([category, { total: catTotal, count }]) => ({
       category,
@@ -218,8 +195,6 @@ function sumForYearUpToMonth(
   return sum;
 }
 
-// Year-scoped sibling of deriveInsights: 12-month series, totals, per-month
-// average, and a YoY delta span-matched to the elapsed part of the year.
 export function deriveYearInsights(
   expenses: Expense[],
   year: number,

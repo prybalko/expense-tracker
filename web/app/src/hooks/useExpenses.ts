@@ -25,24 +25,12 @@ import type {
 } from "../types";
 import { deriveInsights } from "../insights/derive";
 
-// Single canonical cache for every read in the app. Feed shows a windowed
-// slice of this array; Insights and CategoryDetails derive their views via
-// useMemo selectors. There is no separate insights cache, so mutations only
-// touch this one key — and screens never coordinate two queries that
-// resolve at different times (the source of the old "number jumps" UX).
+// The only expenses cache; every screen derives its view from it.
 export const expensesQueryKey = ["expenses"] as const;
 
-// currentUserQueryKey holds the signed-in user fetched via /api/auth/me.
-// ExpenseRow reads this to decide whether each row was authored by someone
-// else (and should be tinted). It stays in cache for the lifetime of the
-// session and is wiped by Login.tsx's queryClient.clear() on a fresh login.
 export const currentUserQueryKey = ["auth", "me"] as const;
 
-// useCurrentUser returns the signed-in user. ExpenseRow calls it once per
-// row, but React Query dedupes by key — there's only ever one in-flight
-// /api/auth/me request and the result is reused. staleTime/gcTime are
-// Infinity because the identity doesn't change without re-login (which
-// clears the whole cache via Login.tsx).
+// Infinity is safe: identity only changes on re-login, which clears the cache.
 export function useCurrentUser(): UseQueryResult<User, Error> {
   return useQuery<User, Error>({
     queryKey: currentUserQueryKey,
@@ -52,28 +40,16 @@ export function useCurrentUser(): UseQueryResult<User, Error> {
   });
 }
 
-// "Mine" = legacy unowned rows + the signed-in user's. Shared by the
-// Insights person filter and useCategoryView so the two screens can never
-// disagree about which rows count as the user's own.
+// Rows with no user_id count as the user's own.
 export function isOwnExpense(e: Expense, me: User | null | undefined): boolean {
   return e.user_id == null || (me != null && e.user_id === me.id);
 }
 
-// lastSyncKey holds the server's wall-clock at the moment the client last
-// successfully synced. The full-list query populates it on cold start; the
-// diff hook advances it on every successful /changes call. Mutations must
-// not touch it: their X-Server-Time says nothing about rows other users
-// wrote in between, so advancing from it skips those rows forever. The value
-// is whatever string the server handed back (RFC3339Nano) — the client never
-// derives or compares it to its own clock. Stays in the query cache rather
-// than a module variable so React Query devtools + multi-tab cache
-// inspection surface it the same way as the rest of the sync state.
+// Server time (RFC3339Nano) of the last full or diff sync. Mutations must not
+// advance it: their server time would skip rows other users wrote meanwhile.
 export const lastSyncKey = ["expenses", "lastSyncAt"] as const;
 
-// sortExpenses mirrors the server's (date DESC, id DESC) ordering so that
-// upserts from mutations / diffs don't visually reshuffle the Feed in ways
-// the server wouldn't. Keeping the comparator lexical on `date` relies on
-// the RFC3339Nano wire format being sortable as a plain string.
+// Must mirror the server's (date DESC, id DESC) order.
 function sortExpenses(arr: Expense[]): Expense[] {
   const out = [...arr];
   out.sort((a, b) => {
@@ -83,20 +59,12 @@ function sortExpenses(arr: Expense[]): Expense[] {
   return out;
 }
 
-// upsertExpense replaces a row with the same id if present, otherwise
-// inserts. Used for the happy path of create / update mutations where the
-// server hands back exactly one row. Re-sorts so the Feed doesn't briefly
-// render the new row in insertion order before the next render.
 function upsertExpense(prev: Expense[] | undefined, next: Expense): Expense[] {
   const base = prev ?? [];
   const without = base.filter((e) => e.id !== next.id);
   return sortExpenses([...without, next]);
 }
 
-// mergeChanges applies a delta-sync payload to the cache in one pass:
-// deletions pruned, updates upserted (covers both "new since lastSyncAt"
-// and "edited since lastSyncAt"), everything else preserved. One re-sort
-// at the end keeps the rendered order canonical.
 export function mergeChanges(
   prev: Expense[] | undefined,
   updated: Expense[],
@@ -130,21 +98,13 @@ function advanceLastSync(qc: QueryClient, serverTime: string | null): void {
   // and silently turn every later sync into a no-op.
   qc.setQueryDefaults(lastSyncKey, { gcTime: Infinity });
   const current = qc.getQueryData<string>(lastSyncKey);
-  // Only move the marker forward. A stale mutation response (slow network
-  // overtaken by a later diff) could otherwise rewind lastSyncAt and cause
-  // the next diff to re-emit rows we already have. String compare is safe
-  // because both values are RFC3339Nano UTC.
+  // Only move forward; a late response must not rewind it. Both are RFC3339Nano UTC.
   if (!current || serverTime > current) {
     qc.setQueryData<string>(lastSyncKey, serverTime);
   }
 }
 
-// useAllExpenses owns the first fetch. staleTime + gcTime: Infinity pin
-// the cache for the lifetime of the session so React Query never refetches
-// the full list behind our back; every post-initial refresh lives in
-// useSyncExpenses, which calls the diff endpoint and merges. That way a
-// five-minute-long navigation session never repays the full-list cost,
-// and newly-edited rows still show up on Feed entry.
+// Fetched once per session; later refreshes go through useSyncExpenses.
 export function useAllExpenses(): UseQueryResult<Expense[], Error> {
   const qc = useQueryClient();
   return useQuery<Expense[], Error>({
@@ -159,11 +119,6 @@ export function useAllExpenses(): UseQueryResult<Expense[], Error> {
   });
 }
 
-// useSyncExpenses exposes a manually-triggered delta fetch. The Feed
-// screen calls this from its mount effect; on success the cache is
-// merged in place and lastSyncAt advances. The hook short-circuits
-// gracefully when lastSyncAt isn't set yet (the cold-start fetch is
-// still in flight) so navigating to Feed mid-load doesn't double-request.
 export type SyncExpensesMutation = UseMutationResult<void, Error, void, unknown>;
 
 export function useSyncExpenses(): SyncExpensesMutation {
@@ -182,11 +137,6 @@ export function useSyncExpenses(): SyncExpensesMutation {
   });
 }
 
-// useInsightsFor reproduces the shape the deleted /api/insights endpoint
-// used to return, derived in O(n) from the cached array. Switching months
-// on the Insights screen recomputes from cache — zero network, zero
-// loading state — so the rendered totals never snap back to 0 between
-// query keys.
 export function useInsightsFor(
   year: number,
   month: number,
@@ -200,10 +150,6 @@ export function useInsightsFor(
   return { data };
 }
 
-// useCategoryView returns CategoryDetails' four header numbers from a
-// single useMemo over one array on one render — `pct` can never flicker
-// because the numerator (filtered total) and denominator (month total)
-// are computed in the same pass.
 export function useCategoryView(
   year: number,
   month: number | null,
@@ -221,12 +167,9 @@ export function useCategoryView(
   const meQuery = useCurrentUser();
   const me = meQuery.data;
   const view = useMemo(() => {
-    // Apply the same person scope Insights used, so the "% of total" here
-    // matches the treemap share the user tapped through from.
     const all = mineOnly
       ? (query.data ?? []).filter((e) => isOwnExpense(e, me))
       : (query.data ?? []);
-    // Single month, or the whole year when `month` is null.
     const inScope = (iso: string): boolean => {
       if (!iso || iso.length < 10) return false;
       if (parseInt(iso.slice(0, 4), 10) !== year) return false;
@@ -245,9 +188,7 @@ export function useCategoryView(
     const pct = monthTotal > 0 ? (total / monthTotal) * 100 : 0;
     return { items, total, count: items.length, monthTotal, pct };
   }, [query.data, year, month, label, mineOnly, me]);
-  // A mine-scoped view filtered before /api/auth/me resolves would render
-  // finished-but-wrong numbers (own rows excluded), so the identity fetch
-  // counts as loading whenever the scope depends on it.
+  // Mine-scoped numbers are wrong until the current user is known.
   return {
     ...view,
     isLoading: query.isLoading || (mineOnly && meQuery.isLoading),
@@ -275,12 +216,7 @@ export type DeleteExpenseMutation = UseMutationResult<
   unknown
 >;
 
-// useCreateExpense POSTs to the server and only touches the cache on
-// success. Optimistic updates were removed when the app moved to
-// wait-for-server writes: the user sees "Adding..." → banner-or-row, with
-// no phantom temp-id row in between. Insert copy has to absorb the full
-// round-trip latency now, but the cache never shows a row the server
-// hasn't confirmed — which is the behaviour the error banner assumes.
+// No optimistic updates: the cache only holds rows the server confirmed.
 export function useCreateExpense(): CreateExpenseMutation {
   const qc = useQueryClient();
   return useMutation<ExpenseWriteResult<Expense>, Error, CreateExpenseInput>({

@@ -7,8 +7,7 @@ import (
 	"expense-tracker/internal/models"
 )
 
-// ErrSessionExpired reports a session whose expiry has passed. Callers
-// treat it like sql.ErrNoRows: the token no longer grants access.
+// ErrSessionExpired reports a known session whose expiry has passed.
 var ErrSessionExpired = errors.New("session expired")
 
 // SessionInfo holds session validation data.
@@ -18,9 +17,8 @@ type SessionInfo struct {
 	ExpiresAt    time.Time
 }
 
-// Session times are bound as UTC everywhere in this file: the driver
-// serializes time.Time to text, and text written as local wall time would
-// change meaning whenever the process timezone does.
+// Session times are bound as UTC: the driver stores time.Time as text, and local
+// wall time would change meaning with the process timezone.
 
 // CreateSession creates a new session for a user.
 func (db *DB) CreateSession(token string, userID int64, expiresAt time.Time) error {
@@ -41,10 +39,8 @@ func (db *DB) ValidateSession(token string) (*models.User, error) {
 	return info.User, nil
 }
 
-// ValidateSessionWithInfo checks if a session token is valid and returns
-// session details. It returns sql.ErrNoRows for an unknown token and
-// ErrSessionExpired for a known-but-expired one; any other error is a
-// storage failure, not a verdict on the session.
+// ValidateSessionWithInfo returns sql.ErrNoRows for an unknown token and ErrSessionExpired
+// for an expired one; any other error is a storage failure.
 func (db *DB) ValidateSessionWithInfo(token string) (*SessionInfo, error) {
 	row := db.conn.QueryRow(`
 		SELECT u.id, u.username, u.password_hash, u.created_at, s.last_activity, s.expires_at
@@ -58,10 +54,7 @@ func (db *DB) ValidateSessionWithInfo(token string) (*SessionInfo, error) {
 	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.CreatedAt, &lastActivity, &expiresAt); err != nil {
 		return nil, err
 	}
-	// Expiry is checked in Go rather than in SQL: the driver stores
-	// time.Time as formatted text, and comparing that lexicographically
-	// against CURRENT_TIMESTAMP silently depends on the text layout and
-	// the process timezone.
+	// Expiry is checked in Go: comparing the stored text to CURRENT_TIMESTAMP depends on layout and timezone.
 	if !expiresAt.After(time.Now()) {
 		return nil, ErrSessionExpired
 	}

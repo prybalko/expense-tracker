@@ -2,12 +2,7 @@ package models
 
 import "time"
 
-// Expense represents a financial expense record. UpdatedAt is the delta-sync
-// cursor: it advances on every Insert/Update/Delete (soft) and is the
-// field the client diffs against when asking "what changed since lastSyncAt".
-// Storage keeps a deleted_at column for tombstones, but that never appears in
-// the JSON payload — the API surfaces removals via a separate `deletedIds`
-// list on the changes endpoint.
+// Expense is an expense row. UpdatedAt is the delta-sync cursor.
 type Expense struct {
 	ID          int64     `json:"id"`
 	Amount      float64   `json:"amount"`

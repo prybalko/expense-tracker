@@ -32,11 +32,6 @@ describe("dayLabel", () => {
     expect(dayLabel("not-a-date", today)).toBe("not-a-date");
   });
 
-  // Regression guard for the iOS-PWA stale-"today" bug. dayLabel is correct as
-  // long as it is handed a fresh `today`; the bug was that callers froze
-  // `today` at the load day via useMemo(() => new Date(), []). useToday() now
-  // re-derives `today` on resume — here we assert the labelling actually flips
-  // once the day advances, which is what the user sees fixed.
   it("re-labels the same expense as the day advances", () => {
     const dayOf = new Date(2026, 5, 16); // app loaded on the 16th
     const dayAfter = new Date(2026, 5, 17); // resumed on the 17th

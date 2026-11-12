@@ -2,7 +2,6 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
@@ -32,20 +31,9 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
-        // Read-only offline with a split read strategy:
-        //   - List (/api/expenses): StaleWhileRevalidate. Reload / PWA
-        //     relaunch paints the Hero off the cached payload in a
-        //     microtask instead of waiting on the network, collapsing the
-        //     "0 → real total" flash to one frame. The background
-        //     revalidate keeps the cache warm; multi-device deltas land
-        //     via the separate /api/expenses/changes call fired from
-        //     useSyncOnVisible on every Feed visibility change.
-        //   - Detail (/api/expenses/:id): NetworkFirst. The EntryForm
-        //     should always open against the latest server-side row when
-        //     online so a cross-device edit doesn't overwrite fresher
-        //     data; the cache is purely the offline fallback.
-        // Writes (POST/PATCH/DELETE) have no rule and pass through to the
-        // network — failing them is preferable to faking success.
+        // List is StaleWhileRevalidate for instant paint; ResumeSync's delta
+        // catches up. Detail is NetworkFirst so an edit opens the latest row.
+        // Writes have no rule and must fail offline rather than fake success.
         runtimeCaching: [
           {
             urlPattern: /\/api\/expenses(\?.*)?$/,
