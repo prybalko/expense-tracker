@@ -126,6 +126,7 @@ export function Feed() {
     <div
       data-testid="feed-screen"
       style={{
+        position: "relative",
         height: "100dvh",
         overflow: "hidden",
         background: t.bg,
@@ -135,6 +136,11 @@ export function Feed() {
         flexDirection: "column",
       }}
     >
+      <PullToRefreshIndicator
+        pullDistance={pull.pullDistance}
+        committed={pull.committed}
+        isRefreshing={pull.isRefreshing}
+      />
       <div
         ref={scrollRef}
         className="scroll-y"
@@ -145,11 +151,6 @@ export function Feed() {
           transition: pull.pullDistance === 0 ? "transform 220ms ease-out" : "none",
         }}
       >
-        <PullToRefreshIndicator
-          pullDistance={pull.pullDistance}
-          committed={pull.committed}
-          isRefreshing={pull.isRefreshing}
-        />
         <Hero
           monthName={heroMonth}
           total={heroTotal}
