@@ -61,12 +61,13 @@ export function isOwnExpense(e: Expense, me: User | null | undefined): boolean {
 
 // lastSyncKey holds the server's wall-clock at the moment the client last
 // successfully synced. The full-list query populates it on cold start; the
-// diff hook advances it on every successful /changes call; every mutation
-// advances it off X-Server-Time. The value is whatever string the server
-// handed back (RFC3339Nano) — the client never derives or compares it to
-// its own clock. Stays in the query cache rather than a module variable so
-// React Query devtools + multi-tab cache inspection surface it the same
-// way as the rest of the sync state.
+// diff hook advances it on every successful /changes call. Mutations must
+// not touch it: their X-Server-Time says nothing about rows other users
+// wrote in between, so advancing from it skips those rows forever. The value
+// is whatever string the server handed back (RFC3339Nano) — the client never
+// derives or compares it to its own clock. Stays in the query cache rather
+// than a module variable so React Query devtools + multi-tab cache
+// inspection surface it the same way as the rest of the sync state.
 export const lastSyncKey = ["expenses", "lastSyncAt"] as const;
 
 // sortExpenses mirrors the server's (date DESC, id DESC) ordering so that
@@ -103,7 +104,9 @@ export function mergeChanges(
 ): Expense[] {
   const base = prev ?? [];
   const deletedSet = new Set(deletedIds);
-  const updatedById = new Map(updated.map((e) => [e.id, e]));
+  const updatedById = new Map(
+    updated.filter((e) => !deletedSet.has(e.id)).map((e) => [e.id, e]),
+  );
   const out: Expense[] = [];
   for (const e of base) {
     if (deletedSet.has(e.id)) continue;
@@ -123,6 +126,9 @@ export function mergeChanges(
 
 function advanceLastSync(qc: QueryClient, serverTime: string | null): void {
   if (!serverTime) return;
+  // Nothing observes this key, so the default 5-minute gcTime would drop it
+  // and silently turn every later sync into a no-op.
+  qc.setQueryDefaults(lastSyncKey, { gcTime: Infinity });
   const current = qc.getQueryData<string>(lastSyncKey);
   // Only move the marker forward. A stale mutation response (slow network
   // overtaken by a later diff) could otherwise rewind lastSyncAt and cause
@@ -280,11 +286,10 @@ export function useCreateExpense(): CreateExpenseMutation {
   return useMutation<ExpenseWriteResult<Expense>, Error, CreateExpenseInput>({
     mutationKey: ["expenses", "create"],
     mutationFn: (input) => createExpense(input),
-    onSuccess: ({ data, serverTime }) => {
+    onSuccess: ({ data }) => {
       qc.setQueryData<Expense[]>(expensesQueryKey, (prev) =>
         upsertExpense(prev, data),
       );
-      advanceLastSync(qc, serverTime);
     },
   });
 }
@@ -298,11 +303,10 @@ export function useUpdateExpense(): UpdateExpenseMutation {
   >({
     mutationKey: ["expenses", "update"],
     mutationFn: ({ id, patch }) => updateExpense(id, patch),
-    onSuccess: ({ data, serverTime }) => {
+    onSuccess: ({ data }) => {
       qc.setQueryData<Expense[]>(expensesQueryKey, (prev) =>
         upsertExpense(prev, data),
       );
-      advanceLastSync(qc, serverTime);
     },
   });
 }
@@ -312,11 +316,10 @@ export function useDeleteExpense(): DeleteExpenseMutation {
   return useMutation<ExpenseWriteResult<void>, Error, number>({
     mutationKey: ["expenses", "delete"],
     mutationFn: (id) => deleteExpense(id),
-    onSuccess: ({ serverTime }, id) => {
+    onSuccess: (_result, id) => {
       qc.setQueryData<Expense[]>(expensesQueryKey, (prev) =>
         (prev ?? []).filter((e) => e.id !== id),
       );
-      advanceLastSync(qc, serverTime);
     },
   });
 }

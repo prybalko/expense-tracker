@@ -635,8 +635,7 @@ func (s *E2ETestSuite) TestFeedSyncPicksUpServerSideDeletes() {
 	s.login()
 
 	// 1. Seed a row through the UI. The mutation's onSuccess upserts it
-	//    into the cache and advances lastSyncAt off X-Server-Time, so the
-	//    subsequent diff has a real cursor to send back.
+	//    into the cache; lastSyncAt stays at the full-list cursor.
 	s.addExpense("33.33", "Synced Delete Target", "groceries")
 	err := s.expect.Locator(s.page.Locator(tid("expense-row"))).ToHaveCount(1)
 	s.Require().NoError(err, "expected the seeded row before out-of-band delete")
