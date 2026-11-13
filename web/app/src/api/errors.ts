@@ -1,15 +1,6 @@
-import { ApiError } from "./client";
+import { ApiError, NetworkError } from "./client";
 
-// Human copy for user-visible network failures. Keeps the banner wording in
-// one place so write mutations, the cold-start list fetch, and the Feed-
-// mount diff all speak with the same voice. The banner auto-dismisses
-// after a few seconds, so the copy has to be short and self-contained.
-
-// offlineCopy is the shared "your device isn't on a network" message.
-// navigator.onLine is not a perfect signal — the OS can lie in weird ways
-// (captive portals, iOS background fetch) — but when it does say false it's
-// almost always right, so we prefer this framing over a generic "failed"
-// line.
+// navigator.onLine can report true when offline, but false is reliable.
 const OFFLINE_MESSAGE =
   "You're offline. Try again when you're back on a connection.";
 
@@ -17,13 +8,17 @@ function isOffline(): boolean {
   return typeof navigator !== "undefined" && navigator.onLine === false;
 }
 
-// messageForWriteError maps a create / update / delete failure to the
-// banner copy. ApiError.status 0 is our convention for "timeout, no HTTP
-// response" (see api/client.ts); 409 is the duplicate-row collision the
-// offline-replay path relies on. Any other server-provided error message
-// passes through so the backend's own phrasing (e.g. "amount must be
-// positive") can reach the user unmangled.
+// NetworkError while online: the app loaded, but the server, a proxy or the
+// connection to it failed.
+const UNREACHABLE_READ = "Can't reach the server. Data may be out of date.";
+// The connection can drop after the server saved the row, so don't claim it wasn't.
+const UNREACHABLE_WRITE = "Can't reach the server. Check the list before you try again.";
+
+// ApiError status 0 is a timeout (see client.ts).
 export function messageForWriteError(err: unknown): string {
+  if (err instanceof NetworkError) {
+    return isOffline() ? OFFLINE_MESSAGE : UNREACHABLE_WRITE;
+  }
   if (err instanceof ApiError) {
     if (err.status === 0) {
       if (isOffline()) return OFFLINE_MESSAGE;
@@ -38,12 +33,10 @@ export function messageForWriteError(err: unknown): string {
   return "Couldn't save. Please try again.";
 }
 
-// messageForReadError covers the cold-start list fetch and the Feed-mount
-// diff. These are fire-and-forget from the user's perspective — they'll
-// retry by navigating back or pulling the app forward — so the copy
-// emphasises the fact that the data they're seeing may be slightly stale
-// rather than asking them to do anything.
 export function messageForReadError(err: unknown): string {
+  if (err instanceof NetworkError) {
+    return isOffline() ? OFFLINE_MESSAGE : UNREACHABLE_READ;
+  }
   if (err instanceof ApiError) {
     if (err.status === 0) {
       if (isOffline()) return OFFLINE_MESSAGE;
