@@ -5,7 +5,7 @@
 Mobile-first expense tracker — Go API + React 19 PWA, designed to live on
 your iOS home screen.
 
-[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-7-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev)
 [![PWA](https://img.shields.io/badge/PWA-Installable-5A0FC8?style=flat-square&logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
@@ -96,7 +96,7 @@ Selectors anchor on `data-testid`.
 
 ## Stack
 
-Go 1.25 · SQLite via [`modernc.org/sqlite`](https://modernc.org/sqlite)
+Go 1.26 · SQLite via [`modernc.org/sqlite`](https://modernc.org/sqlite)
 (CGo-free) · React 19 · Vite 7 · TanStack Query ·
 [`vite-plugin-pwa`](https://vite-pwa-org.netlify.app/) + Workbox ·
 Playwright.
